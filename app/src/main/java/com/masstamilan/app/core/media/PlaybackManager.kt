@@ -6,12 +6,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.masstamilan.app.R
 import com.masstamilan.app.ui.MainActivity
 import javax.inject.Inject
@@ -29,8 +31,8 @@ class PlaybackManager @Inject constructor() {
                 .setHandleAudioBecomingNoisy(true)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                        .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
                         .build(),
                     true
                 ).build()
@@ -113,7 +115,7 @@ class PlaybackManager @Inject constructor() {
     fun releasePlayer() {
         player?.release()
         player = null
-        mediaSession?.run { player = null; release() }
+        mediaSession?.release()
         mediaSession = null
     }
 
@@ -130,9 +132,9 @@ class PlaybackManager @Inject constructor() {
                     override fun onAddMediaItems(
                         mediaSession: MediaSession,
                         controller: MediaSession.ControllerInfo,
-                        mediaItems: List<MediaItem>
-                    ): List<MediaItem> {
-                        return mediaItems
+                        mediaItems: MutableList<MediaItem>
+                    ): ListenableFuture<MutableList<MediaItem>> {
+                        return Futures.immediateFuture(mediaItems)
                     }
                 })
                 .build()

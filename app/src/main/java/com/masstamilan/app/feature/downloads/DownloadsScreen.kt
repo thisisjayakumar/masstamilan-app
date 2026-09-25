@@ -23,6 +23,7 @@ import com.masstamilan.app.data.model.DownloadEntity
 import com.masstamilan.app.ui.theme.*
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(navController: NavController, downloadHelper: DownloadHelper? = null) {
     val context = LocalContext.current

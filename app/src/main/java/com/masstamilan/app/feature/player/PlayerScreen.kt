@@ -28,6 +28,7 @@ import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.service.MusicPlaybackService
 import com.masstamilan.app.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(navController: NavController, songId: String, playbackManager: PlaybackManager = remember { PlaybackManager() }) {
     val context = LocalContext.current

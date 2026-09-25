@@ -21,6 +21,7 @@ import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SongDetailScreen(navController: NavController, movieSlug: String, api: MasstamilanApi? = null) {
     val context = LocalContext.current
@@ -34,7 +35,7 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
     LaunchedEffect(movieSlug) {
         try {
             val html = api?.getMoviePage(movieSlug) ?: ""
-            songs = api.getSongsFromMoviePage(html)
+            songs = api?.getSongsFromMoviePage(html) ?: emptyList()
         } catch (e: Exception) {
             Toast.makeText(context, "Error loading songs", Toast.LENGTH_SHORT).show()
         } finally {
@@ -63,7 +64,13 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
             } else {
                 LazyColumn(contentPadding = PaddingValues(16.dp)) {
                     items(songs) { song ->
-                        SongListItem(song, playingIndex, navController, playbackManager)
+                        SongListItem(
+                            song = song,
+                            playingIndex = playingIndex,
+                            navController = navController,
+                            playbackManager = playbackManager,
+                            onPlayingIndexChange = { playingIndex = it }
+                        )
                     }
                 }
             }
@@ -72,7 +79,13 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
 }
 
 @Composable
-fun SongListItem(song: SongResult, playingIndex: Int, navController: NavController, playbackManager: PlaybackManager) {
+fun SongListItem(
+    song: SongResult,
+    playingIndex: Int,
+    navController: NavController,
+    playbackManager: PlaybackManager,
+    onPlayingIndexChange: (Int) -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -91,7 +104,7 @@ fun SongListItem(song: SongResult, playingIndex: Int, navController: NavControll
             }
             Row {
                 IconButton(onClick = {
-                    playingIndex = if (playingIndex == song.id) { -1 } else song.id
+                    onPlayingIndexChange(if (playingIndex == song.id) { -1 } else song.id)
                     // Play functionality
                 }) {
                     Icon(Icons.Default.PlayArrow, "Play", tint = Primary, modifier = Modifier.size(24.dp))

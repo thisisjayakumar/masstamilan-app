@@ -26,7 +26,7 @@ fun MasstamilanAppTheme(
     val colorScheme = if (darkTheme) DarkColorScheme else DarkColorScheme
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = androidx.compose.material3.Typography,
+        typography = Typography,
         content = content
     )
 }

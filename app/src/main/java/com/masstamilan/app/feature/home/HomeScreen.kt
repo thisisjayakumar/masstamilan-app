@@ -19,6 +19,7 @@ import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(navController: NavController, api: MasstamilanApi? = null) {
     val scope = rememberCoroutineScope()

@@ -1,5 +1,6 @@
 package com.masstamilan.app.core.util
 
+import com.masstamilan.app.BuildConfig
 import timber.log.Timber
 
 object Logger {

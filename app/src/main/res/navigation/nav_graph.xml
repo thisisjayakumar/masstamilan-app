@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/homeFragment">
+    <fragment android:id="@+id/homeFragment" android:name="com.masstamilan.app.feature.home.HomeScreen" android:label="Home" />
+    <fragment android:id="@+id/searchFragment" android:name="com.masstamilan.app.feature.search.SearchScreen" android:label="Search" />
+    <fragment android:id="@+id/songDetailFragment" android:name="com.masstamilan.app.feature.songdetail.SongDetailScreen" android:label="Song Details" />
+    <fragment android:id="@+id/downloadsFragment" android:name="com.masstamilan.app.feature.downloads.DownloadsScreen" android:label="Downloads" />
+    <fragment android:id="@+id/playerFragment" android:name="com.masstamilan.app.feature.player.PlayerScreen" android:label="Player" />
+</navigation>

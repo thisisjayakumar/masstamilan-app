@@ -1,0 +1,27 @@
+# Local SDK location (CI provides its own via android-actions/setup-android)
+local.properties
+
+# Build outputs
+build/
+app/build/
+*.apk
+*.aab
+*.ap_
+
+# Signing keys - NEVER commit; CI injects via MASSTAMILAN_KEYSTORE_* secrets
+*.keystore
+*.jks
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+
+# Unit test reports
+**/test-results/

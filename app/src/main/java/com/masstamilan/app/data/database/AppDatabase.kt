@@ -6,7 +6,6 @@ import com.masstamilan.app.data.dao.DownloadDao
 import com.masstamilan.app.data.model.DownloadEntity
 
 @Database(entities = [DownloadEntity::class], version = 1, exportSchema = false)
-@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
 
@@ -25,12 +24,4 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
     }
-}
-
-class Converters {
-    @TypeConverter
-    fun fromString(value: String) = value
-
-    @TypeConverter
-    fun toString(value: String) = value
 }

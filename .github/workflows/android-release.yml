@@ -35,8 +35,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # No setup-android step: ubuntu-latest runners already ship a full
+      # SDK (ANDROID_HOME preset). The setup-android action is currently
+      # broken - it tries to install the obsolete `tools` package and fails.
+      - name: Confirm preinstalled Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" | tail -3
 
       - name: Set up Gradle caching
         uses: gradle/actions/setup-gradle@v3

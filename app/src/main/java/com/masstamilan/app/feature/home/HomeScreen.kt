@@ -39,7 +39,7 @@ fun HomeScreen(navController: NavController, api: MasstamilanApi? = null) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Masstamilan", color = TextPrimary) },
+                title = { Text("MassTamilan", color = TextPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface)
             )
         },

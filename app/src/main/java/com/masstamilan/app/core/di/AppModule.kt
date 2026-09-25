@@ -11,6 +11,8 @@ import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.repository.MasstamilanRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Singleton
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -24,16 +26,16 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): com.squareup.okhttp3.OkHttpClient {
-        return com.squareup.okhttp3.OkHttpClient.Builder()
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+    fun provideOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 
     @Provides
     @Singleton
-    fun provideApi(client: com.squareup.okhttp3.OkHttpClient): MasstamilanApi {
+    fun provideApi(client: OkHttpClient): MasstamilanApi {
         return MasstamilanApi(client)
     }
 

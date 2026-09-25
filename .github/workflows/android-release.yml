@@ -42,17 +42,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Restore release keystore (optional)
-        if: ${{ secrets.MASSTAMILAN_KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_B64: ${{ secrets.MASSTAMILAN_KEYSTORE_BASE64 }}
-        run: echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/masstamilan-release.keystore"
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/masstamilan-release.keystore"
+            echo "Keystore restored - release APK will be signed."
+          else
+            echo "No keystore secret - release APK will be unsigned."
+          fi
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Build release APK
         env:
-          MASSTAMILAN_KEYSTORE_PATH: ${{ secrets.MASSTAMILAN_KEYSTORE_BASE64 != '' && format('{0}/masstamilan-release.keystore', runner.temp) || '' }}
+          MASSTAMILAN_KEYSTORE_PATH: ${{ runner.temp }}/masstamilan-release.keystore
           MASSTAMILAN_KEYSTORE_PASSWORD: ${{ secrets.MASSTAMILAN_KEYSTORE_PASSWORD }}
           MASSTAMILAN_KEY_ALIAS: ${{ secrets.MASSTAMILAN_KEY_ALIAS }}
           MASSTAMILAN_KEY_PASSWORD: ${{ secrets.MASSTAMILAN_KEY_PASSWORD }}

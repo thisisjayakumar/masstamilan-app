@@ -24,7 +24,7 @@ android {
     // Release signing is opt-in: provide a keystore via env vars
     // (MASSTAMILAN_KEYSTORE_PATH/PASSWORD, MASSTAMILAN_KEY_ALIAS/PASSWORD)
     // or Gradle properties (masstamilan.keystore.path/password, masstamilan.key.alias/password).
-    // Without them the release APK builds unsigned (app-release-unsigned.apk).
+    // Without them the release APK builds unsigned (Masstamilan_<version>.apk, unsigned).
     signingConfigs {
         create("release") {
             val ksPath: String? =
@@ -84,6 +84,14 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    // Custom APK name: Masstamilan_<version>.apk (e.g. Masstamilan_1.0.0.apk)
+    // instead of the default app-release.apk.
+    applicationVariants.all {
+        outputs.all {
+            outputFileName = "Masstamilan_${defaultConfig.versionName}.apk"
         }
     }
 }

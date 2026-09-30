@@ -11,7 +11,7 @@ name: Android Release APK
 #   MASSTAMILAN_KEYSTORE_PASSWORD
 #   MASSTAMILAN_KEY_ALIAS
 #   MASSTAMILAN_KEY_PASSWORD
-# Without them the build still succeeds and uploads app-release-unsigned.apk.
+# Without them the build still succeeds and uploads Masstamilan_<version>.apk (unsigned).
 # Never commit a keystore file (see .gitignore) - linqmusic-style committed
 # keystores leak your signing identity.
 

@@ -6,6 +6,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import com.masstamilan.app.core.media.PlaybackManager
+import com.masstamilan.app.core.media.StreamResolver
 import com.masstamilan.app.data.database.AppDatabase
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.repository.MasstamilanRepository
@@ -47,8 +48,13 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePlaybackManager(): PlaybackManager {
-        return PlaybackManager()
+    fun provideStreamResolver(api: MasstamilanApi): StreamResolver =
+        StreamResolver { pagePath -> api.resolveStreamUrl(pagePath) }
+
+    @Provides
+    @Singleton
+    fun providePlaybackManager(resolver: StreamResolver): PlaybackManager {
+        return PlaybackManager(resolver)
     }
 }
 

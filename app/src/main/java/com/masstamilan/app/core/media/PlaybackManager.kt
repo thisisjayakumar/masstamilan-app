@@ -15,20 +15,43 @@ import androidx.media3.session.MediaSession
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.masstamilan.app.R
+import com.masstamilan.app.data.model.QueueTrack
+import com.masstamilan.app.data.model.stepIndex
 import com.masstamilan.app.ui.MainActivity
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+/** Resolves a song-page path to a stream URL. Injected so the manager stays network-agnostic. */
+fun interface StreamResolver {
+    suspend fun resolve(pagePath: String): String?
+}
 
 @Singleton
-class PlaybackManager @Inject constructor() {
+class PlaybackManager @Inject constructor(
+    private val streamResolver: StreamResolver
+) {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+    private var appContext: Context? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var currentUrl: String? = null
     private var currentTitle: String = ""
     private var currentArtist: String = ""
     private var currentArtwork: String = ""
 
+    private val _queue = MutableStateFlow(emptyList<QueueTrack>())
+    val queueFlow: StateFlow<List<QueueTrack>> = _queue
+    private val _currentIndex = MutableStateFlow(-1)
+    val currentIndexFlow: StateFlow<Int> = _currentIndex
+
     fun createPlayer(context: Context): ExoPlayer {
+        appContext = context.applicationContext
         if (player == null) {
             player = ExoPlayer.Builder(context)
                 .setHandleAudioBecomingNoisy(true)
@@ -55,10 +78,8 @@ class PlaybackManager @Inject constructor() {
     fun currentArtwork(): String = currentArtwork
 
     /**
-     * Instant play: set a single stream URL and start. Safe to call repeatedly;
-     * no-ops when the same URL is already loaded (avoids re-buffering on
-     * recomposition / double-tap).
-     * @return true if playback started (or was already playing this URL).
+     * Single track = one-item queue. Returns false when nothing playable.
+     * Song-page paths resolve lazily off the main thread.
      */
     fun playStream(
         context: Context,
@@ -66,43 +87,81 @@ class PlaybackManager @Inject constructor() {
         title: String = "",
         artist: String = "",
         artwork: String = ""
-    ): Boolean {
-        if (!isPlayableUrl(url)) return false
-        val exo = createPlayer(context)
-        if (url == currentUrl && exo.mediaItemCount > 0) {
-            exo.play()
-            return true
-        }
-        currentUrl = url
-        currentTitle = title.ifBlank { "Playing" }
-        currentArtist = artist
-        currentArtwork = artwork
-        val item = androidx.media3.common.MediaItem.Builder()
-            .setUri(android.net.Uri.parse(url))
-            .setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
-                    .setTitle(title.ifBlank { "Playing" })
-                    .setArtist(artist)
-                    .build()
-            )
-            .build()
-        exo.setMediaItem(item)
-        exo.prepare()
-        exo.play()
+    ): Boolean = playTrack(
+        context,
+        QueueTrack(streamUrl = url.takeIf(::isPlayableUrl), title = title, artist = artist, artwork = artwork)
+    )
+
+    /**
+     * Album/result list with start position. Entries without a direct URL
+     * resolve via [StreamResolver] when reached. Returns false when empty.
+     */
+    fun playQueue(context: Context, tracks: List<QueueTrack>, startIndex: Int = 0): Boolean {
+        if (tracks.isEmpty()) return false
+        appContext = context.applicationContext
+        _queue.value = tracks
+        scope.launch { loadAt(startIndex.coerceIn(tracks.indices), autoplay = true) }
         return true
     }
 
-    fun playQueue(context: Context, urls: List<String>, startIndex: Int = 0) {
-        if (urls.isEmpty()) return
+    /** Next track in the current album, wrapping to the first. False when N/A. */
+    fun nextInAlbum(): Boolean = step(+1)
+
+    /** Previous track in the current album, wrapping to the last. False when N/A. */
+    fun previousInAlbum(): Boolean = step(-1)
+
+    private fun playTrack(context: Context, track: QueueTrack): Boolean {
+        if (track.streamUrl == null && track.songPagePath.isBlank()) return false
+        appContext = context.applicationContext
+        _queue.value = listOf(track)
+        scope.launch { loadAt(0, autoplay = true) }
+        return true
+    }
+
+    private fun step(delta: Int): Boolean {
+        val queue = _queue.value
+        if (queue.size < 2 || appContext == null) return false
+        val wasPlaying = player?.playWhenReady == true
+        scope.launch { loadAt(stepIndex(_currentIndex.value, queue.size, delta), autoplay = wasPlaying) }
+        return true
+    }
+
+    private suspend fun loadAt(index: Int, autoplay: Boolean) {
+        val context = appContext ?: return
+        val track = _queue.value.getOrNull(index) ?: return
+        val url = track.streamUrl
+            ?: track.songPagePath.takeIf { it.isNotBlank() }?.let {
+                try {
+                    streamResolver.resolve(it)
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: return
+        if (!isPlayableUrl(url)) return
         val exo = createPlayer(context)
-        val items = urls.filter(::isPlayableUrl).map {
-            androidx.media3.common.MediaItem.fromUri(android.net.Uri.parse(it))
+        if (url == currentUrl && exo.mediaItemCount > 0) {
+            if (autoplay) exo.play()
+            _currentIndex.value = index
+            return
         }
-        if (items.isEmpty()) return
-        exo.setMediaItems(items, startIndex.coerceIn(items.indices), 0L)
+        currentUrl = url
+        currentTitle = track.title.ifBlank { "Playing" }
+        currentArtist = track.artist
+        currentArtwork = track.artwork
+        val metadata = androidx.media3.common.MediaMetadata.Builder()
+            .setTitle(currentTitle)
+            .setArtist(currentArtist)
+            .apply { if (currentArtwork.isNotBlank()) setArtworkUri(android.net.Uri.parse(currentArtwork)) }
+            .build()
+        exo.setMediaItem(
+            androidx.media3.common.MediaItem.Builder()
+                .setUri(android.net.Uri.parse(url))
+                .setMediaMetadata(metadata)
+                .build()
+        )
         exo.prepare()
-        exo.play()
-        currentUrl = urls[startIndex.coerceIn(urls.indices)]
+        exo.playWhenReady = autoplay
+        _currentIndex.value = index
     }
 
     fun stopAndClear() {
@@ -110,6 +169,8 @@ class PlaybackManager @Inject constructor() {
         player?.clearMediaItems()
         currentUrl = null
         currentArtwork = ""
+        _queue.value = emptyList()
+        _currentIndex.value = -1
     }
 
     companion object {

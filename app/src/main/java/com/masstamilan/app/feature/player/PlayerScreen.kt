@@ -56,6 +56,10 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
     val player = remember(context) {
         resolvedManager.getPlayer() ?: resolvedManager.createPlayer(context)
     }
+    // Recompose on track change so title/artist/artwork refresh without navigation.
+    val queue by resolvedManager.queueFlow.collectAsState()
+    val trackIndex by resolvedManager.currentIndexFlow.collectAsState()
+    val canSkip = queue.size > 1 && trackIndex >= 0
     var isPlaying by remember { mutableStateOf(player.isPlaying) }
     var position by remember { mutableStateOf(player.currentPosition) }
     var duration by remember { mutableStateOf(player.duration.coerceAtLeast(0L)) }
@@ -251,7 +255,10 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
                         modifier = Modifier.size(26.dp)
                     )
                 }
-                IconButton(onClick = { player.seekToPrevious() }) {
+                IconButton(
+                    onClick = { resolvedManager.previousInAlbum() },
+                    enabled = canSkip
+                ) {
                     Icon(Icons.Default.SkipPrevious, "Previous", tint = TextPrimary, modifier = Modifier.size(40.dp))
                 }
                 Box(
@@ -272,7 +279,10 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
                         modifier = Modifier.size(36.dp)
                     )
                 }
-                IconButton(onClick = { player.seekToNext() }) {
+                IconButton(
+                    onClick = { resolvedManager.nextInAlbum() },
+                    enabled = canSkip
+                ) {
                     Icon(Icons.Default.SkipNext, "Next", tint = TextPrimary, modifier = Modifier.size(40.dp))
                 }
                 IconButton(onClick = {

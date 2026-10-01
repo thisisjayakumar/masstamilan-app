@@ -7,6 +7,7 @@ import com.masstamilan.app.data.model.DownloadEntity
 import com.masstamilan.app.data.model.RankedSong
 import com.masstamilan.app.data.model.SearchResult
 import com.masstamilan.app.data.model.SongResult
+import com.masstamilan.app.data.model.pagePathOf
 import com.masstamilan.app.data.remote.MasstamilanApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -97,14 +98,7 @@ class MasstamilanRepository @Inject constructor(
             }
     }
 
-    private fun slugFor(song: SongResult): String {
-        // dlPath is "/{id}/{song}-mp3-song" or "/downloader/..." — only first is a page
-        val p = song.dlPath
-        if (p.matches(Regex("""/\d+/.+""")) && !p.startsWith("/downloader/")) {
-            return p.trim('/')
-        }
-        return ""
-    }
+    private fun slugFor(song: SongResult): String = pagePathOf(song.dlPath)
 
     // ---- Downloads ----
     fun getDownloads(): Flow<List<DownloadEntity>> =

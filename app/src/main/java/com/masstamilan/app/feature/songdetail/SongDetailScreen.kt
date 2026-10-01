@@ -18,18 +18,16 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.media.PlaybackManager
-import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.data.model.SongResult
+import com.masstamilan.app.data.model.toQueue
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.ui.theme.*
 import dagger.hilt.android.EntryPointAccessors
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SongDetailScreen(navController: NavController, movieSlug: String, api: MasstamilanApi? = null) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var songs by remember { mutableStateOf<List<SongResult>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var playingIndex by remember { mutableIntStateOf(-1) }
@@ -42,7 +40,6 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
         )
     }
     val resolvedApi = api ?: remember { entryPoint.api() }
-    val repository = remember { entryPoint.repository() }
     val playbackManager = remember { entryPoint.playbackManager() }
 
     LaunchedEffect(movieSlug) {
@@ -57,29 +54,14 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
     }
 
     fun playSong(song: SongResult) {
-        scope.launch {
-            try {
-                val streamUrl = when {
-                    song.dlPath.startsWith("/downloader/") ->
-                        MasstamilanApi.BASE_URL + song.dlPath
-                    song.dlPath.startsWith("http") -> song.dlPath
-                    song.dlPath.isNotBlank() ->
-                        repository.resolveStreamUrl(song.dlPath.trim('/'))
-                    else -> null
-                }
-                if (streamUrl != null) {
-                    playbackManager.playStream(
-                        context, streamUrl, song.name, song.artists,
-                        artwork = Artwork.url(song.imageName)
-                    )
-                    playingIndex = song.id
-                    navController.navigate("player/${song.id}")
-                } else {
-                    toast = "Couldn't resolve stream for \"${song.name}\""
-                }
-            } catch (_: Exception) {
-                toast = "Playback failed — check connection"
-            }
+        // Whole album becomes the queue; the manager resolves each URL lazily.
+        val queue = songs.toQueue(movieSlug)
+        val index = queue.indexOfFirst { it.songId == song.id }.takeIf { it >= 0 } ?: 0
+        if (playbackManager.playQueue(context, queue, index)) {
+            playingIndex = song.id
+            navController.navigate("player/${song.id}")
+        } else {
+            toast = "Couldn't resolve stream for \"${song.name}\""
         }
     }
 

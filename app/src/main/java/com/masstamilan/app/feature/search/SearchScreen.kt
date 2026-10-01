@@ -53,6 +53,7 @@ import coil.compose.AsyncImage
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.data.model.RankedSong
+import com.masstamilan.app.data.model.toQueue
 import com.masstamilan.app.data.repository.MasstamilanRepository
 import com.masstamilan.app.ui.theme.Card as CardColor
 import com.masstamilan.app.ui.theme.Primary
@@ -85,13 +86,11 @@ fun SearchScreen(
     val entryPoint = remember {
         EntryPointAccessors.fromApplication(appContext, SearchEntryPoint::class.java)
     }
-    val repository = remember { entryPoint.repository() }
     val playbackManager = remember { entryPoint.playbackManager() }
     val scope = rememberCoroutineScope()
 
     val state by viewModel.uiState.collectAsState()
     var playingId by remember { mutableStateOf<Int?>(null) }
-    var playingBusy by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(initialQuery) {
@@ -99,36 +98,14 @@ fun SearchScreen(
     }
 
     fun instantPlay(item: RankedSong) {
-        scope.launch {
-            playingBusy = true
-            try {
-                val song = item.song
-                // song.dlPath may be a page path or direct downloader link
-                val streamUrl = when {
-                    song.dlPath.startsWith("/downloader/") ->
-                        "https://www.masstamilan.dev" + song.dlPath
-                    song.dlPath.startsWith("http") -> song.dlPath
-                    item.movieSlug.isNotBlank() ->
-                        repository.resolveStreamUrl(item.movieSlug)
-                    song.dlPath.isNotBlank() ->
-                        repository.resolveStreamUrl(song.dlPath.trim('/'))
-                    else -> null
-                }
-                if (streamUrl != null) {
-                    playbackManager.playStream(
-                        context, streamUrl, song.name, song.artists,
-                        artwork = Artwork.url(song.imageName)
-                    )
-                    playingId = song.id
-                    navController.navigate("player/${song.id}")
-                } else {
-                    toast = "Couldn't resolve stream for \"${song.name}\""
-                }
-            } catch (_: Exception) {
-                toast = "Playback failed — check connection"
-            } finally {
-                playingBusy = false
-            }
+        // Whole result set becomes the queue; the manager resolves each URL lazily.
+        val queue = state.songs.map { it.song }.toQueue()
+        val index = queue.indexOfFirst { it.songId == item.song.id }.takeIf { it >= 0 } ?: 0
+        if (playbackManager.playQueue(context, queue, index)) {
+            playingId = item.song.id
+            navController.navigate("player/${item.song.id}")
+        } else {
+            toast = "Couldn't resolve stream for \"${item.song.name}\""
         }
     }
 
@@ -222,7 +199,6 @@ fun SearchScreen(
                         RankedSongRow(
                             item = item,
                             isPlaying = playingId == item.song.id,
-                            busy = playingBusy,
                             onPlay = { instantPlay(item) },
                             onDownload = {
                                 scope.launch {
@@ -250,7 +226,6 @@ fun SearchScreen(
 fun RankedSongRow(
     item: RankedSong,
     isPlaying: Boolean,
-    busy: Boolean,
     onPlay: () -> Unit,
     onDownload: () -> Unit
 ) {
@@ -291,15 +266,11 @@ fun RankedSongRow(
                     Text(song.duration, style = MaterialTheme.typography.labelSmall, color = TextHint)
                 }
             }
-            if (busy && isPlaying) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-            } else {
-                IconButton(onClick = onPlay) {
-                    Icon(
-                        Icons.Default.PlayArrow, "Play",
-                        tint = if (isPlaying) Primary else TextPrimary
-                    )
-                }
+            IconButton(onClick = onPlay) {
+                Icon(
+                    Icons.Default.PlayArrow, "Play",
+                    tint = if (isPlaying) Primary else TextPrimary
+                )
             }
             IconButton(onClick = onDownload) {
                 Icon(Icons.Default.Download, "Download", tint = TextSecondary)

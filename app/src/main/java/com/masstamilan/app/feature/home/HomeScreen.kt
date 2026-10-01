@@ -17,6 +17,7 @@ import coil.compose.AsyncImage
 import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.core.network.NetworkHelper
+import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.remote.MasstamilanParsers
@@ -101,18 +102,10 @@ fun parseHomePage(html: String): List<MovieItem> =
         MovieItem(
             name = card.name,
             slug = card.slug,
-            posterUrl = absoluteUrl(card.poster),
+            posterUrl = Artwork.url(card.poster),
             starring = card.starring
         )
     }
-
-/** Site-relative asset paths ("/i/x.jpg") need the host prefix for Coil. */
-private fun absoluteUrl(path: String): String = when {
-    path.isBlank() -> ""
-    path.startsWith("http") -> path
-    path.startsWith("/") -> MasstamilanApi.BASE_URL + path
-    else -> path
-}
 
 @Composable
 fun MovieCard(movie: MovieItem, navController: NavController) {

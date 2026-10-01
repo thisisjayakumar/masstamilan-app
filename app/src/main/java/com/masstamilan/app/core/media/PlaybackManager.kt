@@ -24,6 +24,8 @@ class PlaybackManager @Inject constructor() {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
     private var currentUrl: String? = null
+    private var currentTitle: String = ""
+    private var currentArtist: String = ""
 
     fun createPlayer(context: Context): ExoPlayer {
         if (player == null) {
@@ -44,6 +46,10 @@ class PlaybackManager @Inject constructor() {
 
     fun currentStreamUrl(): String? = currentUrl
 
+    fun currentTitle(): String = currentTitle
+
+    fun currentArtist(): String = currentArtist
+
     /**
      * Instant play: set a single stream URL and start. Safe to call repeatedly;
      * no-ops when the same URL is already loaded (avoids re-buffering on
@@ -58,6 +64,8 @@ class PlaybackManager @Inject constructor() {
             return true
         }
         currentUrl = url
+        currentTitle = title.ifBlank { "Playing" }
+        currentArtist = artist
         val item = androidx.media3.common.MediaItem.Builder()
             .setUri(android.net.Uri.parse(url))
             .setMediaMetadata(

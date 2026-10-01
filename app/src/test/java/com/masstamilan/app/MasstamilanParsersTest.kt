@@ -150,4 +150,92 @@ class MasstamilanParsersTest {
         assertEquals("Z", tracks[0].name)
         assertEquals(7, tracks[0].id)
     }
+
+    // ---- Fixtures below mirror live masstamilan.dev markup (captured 2026-10-01) ----
+
+    private val liveHomeCard = """
+        <div class="a-i">
+    <a href="/jailer-2-2026-songs" title="Jailer 2 tamil songs download">
+      <picture>
+        <source srcset="/w/jailer-2-tamil-2026.webp" type="image/webp">
+        <source srcset="/i/jailer-2-tamil-2026.jpg" type="image/jpeg">
+        <img alt="Jailer 2 movie poster" title="Jailer 2 Movie Poster" src="/i/jailer-2-tamil-2026.jpg" loading="lazy" width="100" height="100">
+      </picture>
+      <div class="mw0">
+        <h2>Jailer 2</h2>
+        <p>
+          <b>Starring:</b> Rajinikanth<br>
+          <b>Music:</b> Anirudh Ravichander<br>
+          <b>Director:</b> Nelson
+        </p>
+      </div>
+    </a>
+  </div>
+    """.trimIndent()
+
+    private val liveSearchCard = """
+        <div class="a-i">
+    <a href="/jailer-songs-3?ref=search" title="Jailer tamil songs download">
+      <picture>
+        <source srcset="/w/jailer-tamil-2023.webp" type="image/webp">
+        <img alt="Jailer movie poster" title="Jailer Movie Poster" src="/i/jailer-tamil-2023.jpg" loading="lazy" width="100" height="100">
+      </picture>
+      <div class="mw0">
+        <h2>Jailer</h2>
+        <p>
+          <b>Starring:</b> Rajnikanth, Mohan Lal, Jackie Shroff, Tamannah<br>
+          <b>Music:</b> Anirudh Ravichander
+        </p>
+      </div>
+    </a>
+  </div>
+    """.trimIndent()
+
+    @Test fun `home card with picture element parses`() {
+        val cards = MasstamilanParsers.parseMovieCards(liveHomeCard)
+        assertEquals(1, cards.size)
+        assertEquals("Jailer 2", cards[0].name)
+        assertEquals("/jailer-2-2026-songs", cards[0].slug)
+        assertEquals("/i/jailer-2-tamil-2026.jpg", cards[0].poster)
+        assertEquals("Rajinikanth", cards[0].starring)
+    }
+
+    @Test fun `search card strips ref query and parses`() {
+        val results = MasstamilanParsers.parseSearchMovies(liveSearchCard)
+        assertEquals(1, results.size)
+        assertEquals("Jailer", results[0].name)
+        assertEquals("/jailer-songs-3", results[0].slug)
+        assertEquals("/i/jailer-tamil-2023.jpg", results[0].image)
+    }
+
+    @Test fun `movie cards ignore non-movie links without image`() {
+        val html = """
+            <p><a href="/playlists?ref=banner">Playlists</a></p>
+            <a href="/tamil-songs">Tamil Songs</a>
+            $liveHomeCard
+        """.trimIndent()
+        val cards = MasstamilanParsers.parseMovieCards(html)
+        assertEquals(1, cards.size)
+        assertEquals("/jailer-2-2026-songs", cards[0].slug)
+    }
+
+    @Test fun `autocomplete live payload maps l to slug`() {
+        val json = """[{"n":"Jailer","s":"Tamil — 2023","l":"jailer-songs-3"},
+                      {"n":"Jailer 2","s":"Tamil — 2026","l":"jailer-2-2026-songs"}]"""
+        val out = MasstamilanParsers.parseAutocomplete(json)
+        assertEquals(2, out.size)
+        assertEquals("jailer-songs-3", out[0].slug)
+        assertEquals("jailer-2-2026-songs", out[1].slug)
+        assertEquals("Jailer", out[0].name)
+    }
+
+    @Test fun `live song page dlink picks 320kbps`() {
+        val html = """
+            <h1>Ala Bolelo Song Download MassTamilan.com from Jailer 2 (2026)</h1>
+            <a class="dlink" href="/downloader/sig/ts/d128_cdn/45295/abc" rel="nofollow" title="Download Ala Bolelo 128kbps">128kbps (3.7 MB)</a>
+            <a class="dlink" href="/downloader/sig/ts/d320_cdn/45295/xyz" rel="nofollow" title="Download Ala Bolelo 320kbps">320kbps (7.8 MB)</a>
+        """.trimIndent()
+        val url = MasstamilanParsers.extractStreamUrl(html, prefer320 = true)
+        assertEquals("https://www.masstamilan.dev/downloader/sig/ts/d320_cdn/45295/xyz", url)
+    }
 }

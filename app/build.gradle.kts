@@ -78,7 +78,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.7"
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
 
     packaging {
@@ -89,9 +89,11 @@ android {
 
     // Custom APK name: Masstamilan_<version>.apk (e.g. Masstamilan_1.0.0.apk)
     // instead of the default app-release.apk.
+    @Suppress("DEPRECATION")
     applicationVariants.all {
         outputs.all {
-            outputFileName = "Masstamilan_${defaultConfig.versionName}.apk"
+            (this as com.android.build.gradle.api.ApkVariantOutput).outputFileName =
+                "Masstamilan_${defaultConfig.versionName}.apk"
         }
     }
 }
@@ -105,13 +107,13 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
 
     // Jetpack Compose
-    implementation(platform("androidx.compose:compose-bom:2024.01.00"))
+    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.navigation:navigation-compose:2.7.6")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // Media3 (ExoPlayer)
     val media3Version = "1.2.1"

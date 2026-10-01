@@ -254,7 +254,11 @@ fun RankedSongRow(
     val artUrl = remember(song.imageName) {
         when {
             song.imageName.startsWith("http") -> song.imageName
-            song.imageName.isNotBlank() -> "https://www.masstamilan.dev/i/${song.imageName}"
+            song.imageName.isNotBlank() -> {
+                // img_name is extension-less ("jailer-2-tamil-2026"); /i/<name> alone 404s.
+                val file = if (song.imageName.contains('.')) song.imageName else "${song.imageName}.jpg"
+                "https://www.masstamilan.dev/i/$file"
+            }
             else -> null
         }
     }

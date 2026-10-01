@@ -129,6 +129,17 @@ class MasstamilanApi @Inject constructor(
 }
 
 /**
+ * One movie card as rendered by the site (home grid / search results).
+ * [poster] is site-relative (e.g. "/i/jailer-2-tamil-2026.jpg").
+ */
+data class MovieCard(
+    val name: String,
+    val slug: String,
+    val poster: String,
+    val starring: String = ""
+)
+
+/**
  * Pure parsing functions — no Android, no I/O. Fully unit-testable.
  */
 object MasstamilanParsers {
@@ -181,15 +192,20 @@ object MasstamilanParsers {
     private val IMG_IN_TRACK = Regex(""""img_name"\s*:\s*"([^"]+)"""")
     private val DL_PATH_IN_TRACK = Regex(""""dl_path"\s*:\s*"([^"]+)"""")
 
-    // Search page movie cards: <a href="/movie-songs?ref=search"...><img ... alt="..."><h2>Movie</h2>
-    private val SEARCH_CARD = Regex(
-        """<a\s+href="((?:/[a-z0-9\-]+)+(?:\?ref=search)?)"[^>]*>\s*<img[^>]*?(?:alt="([^"]*)")?[^>]*>\s*<h2[^>]*>\s*([^<]+)""",
+    // Movie cards (home + search). Live markup is:
+    //   <a href="/jailer-2-2026-songs" title="...">
+    //     <picture><source ...><img alt="..." title="..." src="/i/x.jpg" ...></picture>
+    //     <div class="mw0"><h2>Jailer 2</h2><p><b>Starring:</b> ...<br>...</p></div>
+    //   </a>
+    // so the old "<img ...><h2>" adjacency regex never matched.
+    private val CARD_ANCHOR = Regex(
+        """<a\s+href="([^"]+)"[^>]*>(.*?)</a>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
-    private val SEARCH_IMG = Regex(
-        """<a\s+href="((?:/[a-z0-9\-]+)+(?:\?ref=search)?)"[^>]*>\s*<img[^>]+src="([^"]+)"""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-    )
+    private val CARD_IMG = Regex("""<img[^>]*\ssrc="([^"]+)"""", RegexOption.IGNORE_CASE)
+    private val CARD_ALT = Regex("""<img[^>]*\salt="([^"]*)"""", RegexOption.IGNORE_CASE)
+    private val CARD_H2 = Regex("""<h2[^>]*>\s*([^<]+)""", RegexOption.IGNORE_CASE)
+    private val CARD_STARRING = Regex("""Starring:</b>\s*([^<]+)""", RegexOption.IGNORE_CASE)
     private val TOTAL_RESULTS = Regex(
         """(\d[\d,]*)\s+results?|page\s+1\s*/\s*(\d+)""",
         RegexOption.IGNORE_CASE
@@ -201,11 +217,12 @@ object MasstamilanParsers {
             MiniJson.parseArrayOfObjects(json.trim()).mapNotNull { o ->
                 val name = o["n"].ifNullOrBlank { o["name"] } ?: return@mapNotNull null
                 if (name.isBlank()) return@mapNotNull null
-                AutocompleteSuggestion(
-                    name = name,
-                    slug = o["s"].ifNullOrBlank { o["slug"] } ?: "",
-                    link = o["l"].ifNullOrBlank { o["link"] } ?: ""
-                )
+                // Live payload: n=name, l=slug ("jailer-songs-3"), s=label ("Tamil — 2023").
+                // Older payloads had the slug in s — keep it as a fallback.
+                val link = (o["l"] ?: o["link"] ?: "").trim().trim('/')
+                val slug = link.ifBlank { (o["s"] ?: o["slug"] ?: "").trim().trim('/') }
+                if (slug.isBlank()) return@mapNotNull null
+                AutocompleteSuggestion(name = name, slug = slug, link = link)
             }
         } catch (_: Exception) {
             emptyList()
@@ -217,27 +234,40 @@ object MasstamilanParsers {
         return fallback()
     }
 
-    fun parseSearchMovies(html: String): List<SearchResult> {
+    /**
+     * Shared movie-card parser for home and search pages.
+     * Returns name / slug (query-stripped) / relative poster / starring.
+     */
+    fun parseMovieCards(html: String): List<MovieCard> {
         if (html.isBlank()) return emptyList()
-        val imgs = mutableMapOf<String, String>()
-        SEARCH_IMG.findAll(html).forEach { m ->
-            val href = m.groupValues[1].replace("?ref=search", "").trim()
-            val src = m.groupValues[2].trim()
-            if (href.isNotBlank() && src.isNotBlank()) imgs.putIfAbsent(href, src)
-        }
         val seen = LinkedHashSet<String>()
-        val out = mutableListOf<SearchResult>()
-        SEARCH_CARD.findAll(html).forEach { m ->
-            val slug = m.groupValues[1].replace("?ref=search", "").trim()
-            val alt = m.groupValues[2].trim()
-            val title = m.groupValues[3].trim()
-            val name = title.ifBlank { alt }.trim()
-            if (slug.isBlank() || name.isBlank() || !seen.add(slug)) return@forEach
-            if (!slug.endsWith("-songs") && !slug.matches(Regex("""/[a-z0-9\-]+"""))) return@forEach
-            out.add(SearchResult(name = decodeHtml(name), slug = slug, image = imgs[slug] ?: ""))
+        val out = mutableListOf<MovieCard>()
+        CARD_ANCHOR.findAll(html).forEach { m ->
+            val href = m.groupValues[1].trim()
+            if (!href.startsWith("/")) return@forEach
+            val slug = href.substringBefore("?").substringBefore("#").trim()
+            if (!slug.contains("-songs")) return@forEach
+            val body = m.groupValues[2]
+            val poster = CARD_IMG.find(body)?.groupValues?.get(1)?.trim() ?: return@forEach
+            val h2 = CARD_H2.find(body)?.groupValues?.get(1)?.trim().orEmpty()
+            val alt = CARD_ALT.find(body)?.groupValues?.get(1)?.trim().orEmpty()
+            val name = (h2.ifBlank { alt }).trim()
+            if (name.isBlank() || !seen.add(slug)) return@forEach
+            val starring = CARD_STARRING.find(body)?.groupValues?.get(1)?.trim().orEmpty()
+            out.add(
+                MovieCard(
+                    name = decodeHtml(name),
+                    slug = slug,
+                    poster = poster,
+                    starring = decodeHtml(starring)
+                )
+            )
         }
         return out
     }
+
+    fun parseSearchMovies(html: String): List<SearchResult> =
+        parseMovieCards(html).map { SearchResult(name = it.name, slug = it.slug, image = it.poster) }
 
     fun parseMovieTracks(html: String, movieNameFallback: String = ""): List<SongResult> {
         if (html.isBlank()) return emptyList()

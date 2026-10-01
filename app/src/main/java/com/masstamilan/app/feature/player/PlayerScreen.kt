@@ -22,25 +22,63 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.NavController
+import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.service.MusicPlaybackService
 import com.masstamilan.app.ui.theme.*
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(navController: NavController, songId: String, playbackManager: PlaybackManager = remember { PlaybackManager() }) {
+fun PlayerScreen(navController: NavController, songId: String, playbackManager: PlaybackManager? = null) {
     val context = LocalContext.current
-    var isPlaying by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf(0f) }
-    var duration by remember { mutableStateOf(0L) }
-    var position by remember { mutableStateOf(0L) }
+    // Use the Hilt singleton so this screen controls the same ExoPlayer that
+    // Search/Album screens started. A fresh PlaybackManager() would hold an
+    // empty player and play nothing.
+    val resolvedManager = playbackManager ?: remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext, AppEntryPoint::class.java
+        ).playbackManager()
+    }
 
-    val player = playbackManager.getPlayer() ?: remember { playbackManager.createPlayer(context) }
+    val player = remember(context) {
+        resolvedManager.getPlayer() ?: resolvedManager.createPlayer(context)
+    }
+    var isPlaying by remember { mutableStateOf(player.isPlaying) }
+    var progress by remember { mutableStateOf(0f) }
+    var duration by remember { mutableStateOf(player.duration.coerceAtLeast(0L)) }
+    var position by remember { mutableStateOf(player.currentPosition) }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(nowPlaying: Boolean) {
+                isPlaying = nowPlaying
+            }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                duration = player.duration.coerceAtLeast(0L)
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+
+    // Poll position while playing (event-driven duration above).
+    LaunchedEffect(player, isPlaying) {
+        while (true) {
+            position = player.currentPosition
+            duration = player.duration.coerceAtLeast(0L)
+            progress = if (duration > 0) position.toFloat() / duration else 0f
+            delay(if (isPlaying) 500 else 1000)
+        }
+    }
 
     LaunchedEffect(Unit) {
-        playbackManager.createMediaSession(context, player)
+        resolvedManager.createMediaSession(context, player)
     }
 
     Scaffold(
@@ -71,7 +109,6 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
                     }
                     IconButton(onClick = {
                         if (isPlaying) player.pause() else player.play()
-                        isPlaying = !isPlaying
                     }) {
                         Icon(
                             if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -105,8 +142,14 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            Text("Song Title", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-            Text("Artist Name", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            Text(
+                resolvedManager.currentTitle().ifBlank { movieSlugFromId(songId) },
+                style = MaterialTheme.typography.titleLarge, color = TextPrimary
+            )
+            Text(
+                resolvedManager.currentArtist().ifBlank { "Tap play to start" },
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary
+            )
 
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -115,7 +158,10 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
                 Text("${formatTime(position)} / ${formatTime(duration)}", style = MaterialTheme.typography.labelSmall, color = TextHint)
                 Slider(
                     value = progress,
-                    onValueChange = { progress = it },
+                    onValueChange = {
+                        progress = it
+                        if (duration > 0) player.seekTo((it * duration).toLong())
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = SliderDefaults.colors(thumbColor = Primary)
                 )

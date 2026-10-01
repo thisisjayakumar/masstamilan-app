@@ -51,3 +51,15 @@ object AppModule {
         return PlaybackManager()
     }
 }
+
+/**
+ * Shared entry point for @Composables that aren't under a Hilt ViewModel
+ * (Home, SongDetail, Player). SearchScreen has its own equivalent.
+ */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface AppEntryPoint {
+    fun api(): MasstamilanApi
+    fun repository(): MasstamilanRepository
+    fun playbackManager(): PlaybackManager
+}

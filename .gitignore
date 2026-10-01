@@ -25,3 +25,5 @@ gradle-app.setting
 
 # Unit test reports
 **/test-results/
+
+.*mcp/*

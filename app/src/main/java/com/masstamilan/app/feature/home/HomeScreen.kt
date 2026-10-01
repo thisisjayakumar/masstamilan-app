@@ -10,25 +10,37 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.core.network.NetworkHelper
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.remote.MasstamilanApi
+import com.masstamilan.app.data.remote.MasstamilanParsers
 import com.masstamilan.app.ui.theme.*
+import dagger.hilt.android.EntryPointAccessors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(navController: NavController, api: MasstamilanApi? = null) {
+    val context = LocalContext.current
+    // NavHost doesn't pass an api; resolve the Hilt singleton instead.
+    // Explicit param still wins (previews / tests).
+    val resolvedApi = api ?: remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext, AppEntryPoint::class.java
+        ).api()
+    }
     val scope = rememberCoroutineScope()
     var movies by remember { mutableStateOf<List<MovieItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         try {
-            val html = api?.getHomePage() ?: ""
+            val html = resolvedApi.getHomePage()
             movies = parseHomePage(html)
         } catch (e: Exception) {
             Toast.makeText(navController.context, "Error loading", Toast.LENGTH_SHORT).show()
@@ -84,17 +96,22 @@ data class MovieItem(
     val starring: String = ""
 )
 
-fun parseHomePage(html: String): List<MovieItem> {
-    val results = mutableListOf<MovieItem>()
-    val pattern = Regex("""<a href="(/[^"]+\\.songs)"[^>]*>\s*<img[^>]+src="([^"]+)"[^>]+>\s*<h2[^>]*>([^<]+)""")
-    val starPattern = Regex("""Starring:\s*([^<]+)""")
-    pattern.findAll(html).forEach { match ->
-        val slug = match.groupValues[1].replace("-songs", "")
-        val poster = match.groupValues[2]
-        val name = match.groupValues[3]
-        results.add(MovieItem(name = name, slug = slug, posterUrl = poster))
+fun parseHomePage(html: String): List<MovieItem> =
+    MasstamilanParsers.parseMovieCards(html).take(10).map { card ->
+        MovieItem(
+            name = card.name,
+            slug = card.slug,
+            posterUrl = absoluteUrl(card.poster),
+            starring = card.starring
+        )
     }
-    return results.take(10)
+
+/** Site-relative asset paths ("/i/x.jpg") need the host prefix for Coil. */
+private fun absoluteUrl(path: String): String = when {
+    path.isBlank() -> ""
+    path.startsWith("http") -> path
+    path.startsWith("/") -> MasstamilanApi.BASE_URL + path
+    else -> path
 }
 
 @Composable
@@ -122,7 +139,7 @@ fun MovieCard(movie: MovieItem, navController: NavController) {
                 Text(movie.starring, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, maxLines = 2)
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
-                    onClick = { navController.navigate("song_detail/${movie.slug}") },
+                    onClick = { navController.navigate("song_detail/${movie.slug.trim('/')}") },
                     colors = ButtonDefaults.buttonColors(containerColor = Primary)
                 ) {
                     Text("Listen", color = TextPrimary)

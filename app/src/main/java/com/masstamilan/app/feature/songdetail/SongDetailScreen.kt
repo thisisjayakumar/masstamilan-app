@@ -16,10 +16,13 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.ui.theme.*
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,17 +32,50 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
     var songs by remember { mutableStateOf<List<SongResult>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var playingIndex by remember { mutableIntStateOf(-1) }
+    var toast by remember { mutableStateOf<String?>(null) }
 
-    val playbackManager = remember { PlaybackManager() }
+    // NavHost passes no api/helper; resolve Hilt singletons instead.
+    val entryPoint = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext, AppEntryPoint::class.java
+        )
+    }
+    val resolvedApi = api ?: remember { entryPoint.api() }
+    val repository = remember { entryPoint.repository() }
+    val playbackManager = remember { entryPoint.playbackManager() }
 
     LaunchedEffect(movieSlug) {
         try {
-            val html = api?.getMoviePage(movieSlug) ?: ""
-            songs = api?.getSongsFromMoviePage(html) ?: emptyList()
+            val html = resolvedApi.getMoviePage(movieSlug)
+            songs = resolvedApi.getSongsFromMoviePage(html)
         } catch (e: Exception) {
             Toast.makeText(context, "Error loading songs", Toast.LENGTH_SHORT).show()
         } finally {
             loading = false
+        }
+    }
+
+    fun playSong(song: SongResult) {
+        scope.launch {
+            try {
+                val streamUrl = when {
+                    song.dlPath.startsWith("/downloader/") ->
+                        MasstamilanApi.BASE_URL + song.dlPath
+                    song.dlPath.startsWith("http") -> song.dlPath
+                    song.dlPath.isNotBlank() ->
+                        repository.resolveStreamUrl(song.dlPath.trim('/'))
+                    else -> null
+                }
+                if (streamUrl != null) {
+                    playbackManager.playStream(context, streamUrl, song.name, song.artists)
+                    playingIndex = song.id
+                    navController.navigate("player/${song.id}")
+                } else {
+                    toast = "Couldn't resolve stream for \"${song.name}\""
+                }
+            } catch (_: Exception) {
+                toast = "Playback failed — check connection"
+            }
         }
     }
 
@@ -67,11 +103,19 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
                         SongListItem(
                             song = song,
                             playingIndex = playingIndex,
-                            navController = navController,
-                            playbackManager = playbackManager,
-                            onPlayingIndexChange = { playingIndex = it }
+                            onPlay = { playSong(song) },
+                            onDownload = { navController.navigate("downloads") }
                         )
                     }
+                }
+            }
+            toast?.let {
+                LaunchedEffect(it) {
+                    kotlinx.coroutines.delay(2500)
+                    toast = null
+                }
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    Text(it, color = TextSecondary, modifier = Modifier.padding(8.dp))
                 }
             }
         }
@@ -82,9 +126,8 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
 fun SongListItem(
     song: SongResult,
     playingIndex: Int,
-    navController: NavController,
-    playbackManager: PlaybackManager,
-    onPlayingIndexChange: (Int) -> Unit
+    onPlay: () -> Unit,
+    onDownload: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -100,18 +143,19 @@ fun SongListItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(song.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 Text(song.artists, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                Text("${song.duration} | ${song.downloads} downloads", style = MaterialTheme.typography.labelSmall, color = TextHint)
+                val meta = listOfNotNull(
+                    song.duration.ifBlank { null },
+                    song.downloads.takeIf { it > 0 }?.let { "$it downloads" }
+                ).joinToString(" | ")
+                if (meta.isNotBlank()) {
+                    Text(meta, style = MaterialTheme.typography.labelSmall, color = TextHint)
+                }
             }
             Row {
-                IconButton(onClick = {
-                    onPlayingIndexChange(if (playingIndex == song.id) { -1 } else song.id)
-                    // Play functionality
-                }) {
+                IconButton(onClick = onPlay) {
                     Icon(Icons.Default.PlayArrow, "Play", tint = Primary, modifier = Modifier.size(24.dp))
                 }
-                IconButton(onClick = {
-                    navController.navigate("player/${song.id}")
-                }) {
+                IconButton(onClick = onDownload) {
                     Icon(Icons.Default.Download, "Download", tint = TextSecondary, modifier = Modifier.size(24.dp))
                 }
             }

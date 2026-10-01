@@ -67,5 +67,12 @@
 -dontwarn com.google.common.**
 -keep class com.google.common.util.concurrent.** { *; }
 
+# --- Jetpack Compose (release crash was NoSuchMethodError in
+# androidx.compose.animation.core.KeyframesSpec after R8 optimize) ---
+-keep class androidx.compose.** { *; }
+-keep interface androidx.compose.** { *; }
+-keep class androidx.compose.animation.core.** { *; }
+-dontwarn androidx.compose.**
+
 # --- Coroutines ---
 -dontwarn kotlinx.coroutines.**

@@ -26,6 +26,7 @@ class PlaybackManager @Inject constructor() {
     private var currentUrl: String? = null
     private var currentTitle: String = ""
     private var currentArtist: String = ""
+    private var currentArtwork: String = ""
 
     fun createPlayer(context: Context): ExoPlayer {
         if (player == null) {
@@ -50,13 +51,22 @@ class PlaybackManager @Inject constructor() {
 
     fun currentArtist(): String = currentArtist
 
+    /** Absolute album-art URL for the current track ("" when unknown). */
+    fun currentArtwork(): String = currentArtwork
+
     /**
      * Instant play: set a single stream URL and start. Safe to call repeatedly;
      * no-ops when the same URL is already loaded (avoids re-buffering on
      * recomposition / double-tap).
      * @return true if playback started (or was already playing this URL).
      */
-    fun playStream(context: Context, url: String, title: String = "", artist: String = ""): Boolean {
+    fun playStream(
+        context: Context,
+        url: String,
+        title: String = "",
+        artist: String = "",
+        artwork: String = ""
+    ): Boolean {
         if (!isPlayableUrl(url)) return false
         val exo = createPlayer(context)
         if (url == currentUrl && exo.mediaItemCount > 0) {
@@ -66,6 +76,7 @@ class PlaybackManager @Inject constructor() {
         currentUrl = url
         currentTitle = title.ifBlank { "Playing" }
         currentArtist = artist
+        currentArtwork = artwork
         val item = androidx.media3.common.MediaItem.Builder()
             .setUri(android.net.Uri.parse(url))
             .setMediaMetadata(
@@ -98,6 +109,7 @@ class PlaybackManager @Inject constructor() {
         player?.stop()
         player?.clearMediaItems()
         currentUrl = null
+        currentArtwork = ""
     }
 
     companion object {

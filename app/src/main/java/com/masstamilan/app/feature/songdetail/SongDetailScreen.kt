@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.media.PlaybackManager
+import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.ui.theme.*
@@ -67,7 +68,10 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
                     else -> null
                 }
                 if (streamUrl != null) {
-                    playbackManager.playStream(context, streamUrl, song.name, song.artists)
+                    playbackManager.playStream(
+                        context, streamUrl, song.name, song.artists,
+                        artwork = Artwork.url(song.imageName)
+                    )
                     playingIndex = song.id
                     navController.navigate("player/${song.id}")
                 } else {

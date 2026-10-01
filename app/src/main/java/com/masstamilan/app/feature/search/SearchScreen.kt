@@ -51,6 +51,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.masstamilan.app.core.media.PlaybackManager
+import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.data.model.RankedSong
 import com.masstamilan.app.data.repository.MasstamilanRepository
 import com.masstamilan.app.ui.theme.Card as CardColor
@@ -114,7 +115,10 @@ fun SearchScreen(
                     else -> null
                 }
                 if (streamUrl != null) {
-                    playbackManager.playStream(context, streamUrl, song.name, song.artists)
+                    playbackManager.playStream(
+                        context, streamUrl, song.name, song.artists,
+                        artwork = Artwork.url(song.imageName)
+                    )
                     playingId = song.id
                     navController.navigate("player/${song.id}")
                 } else {
@@ -252,15 +256,7 @@ fun RankedSongRow(
 ) {
     val song = item.song
     val artUrl = remember(song.imageName) {
-        when {
-            song.imageName.startsWith("http") -> song.imageName
-            song.imageName.isNotBlank() -> {
-                // img_name is extension-less ("jailer-2-tamil-2026"); /i/<name> alone 404s.
-                val file = if (song.imageName.contains('.')) song.imageName else "${song.imageName}.jpg"
-                "https://www.masstamilan.dev/i/$file"
-            }
-            else -> null
-        }
+        Artwork.url(song.imageName).ifBlank { null }
     }
     Card(
         modifier = Modifier

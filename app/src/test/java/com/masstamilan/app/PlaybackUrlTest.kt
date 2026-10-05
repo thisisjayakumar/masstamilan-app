@@ -54,6 +54,15 @@ class PlaybackUrlTest {
         assertNull(PlaybackManager.absoluteStreamUrl(""))
     }
 
+    @Test fun `local download uris are playable offline`() {
+        assertTrue(PlaybackManager.isPlayableUrl("content://media/external/audio/media/42"))
+        assertTrue(PlaybackManager.isPlayableUrl("file:///storage/emulated/0/Music/x.mp3"))
+    }
+
+    @Test fun `local uris with spaces rejected`() {
+        assertFalse(PlaybackManager.isPlayableUrl("content://media/external/my song.mp3"))
+    }
+
     @Test fun `320 preferred over 128 in parser`() {
         val html = """
             <a class="dlink" href="/downloader/s/128" rel="nofollow"

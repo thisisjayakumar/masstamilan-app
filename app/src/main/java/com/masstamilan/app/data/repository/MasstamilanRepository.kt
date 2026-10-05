@@ -80,14 +80,7 @@ class MasstamilanRepository @Inject constructor(
         val all = perMovie.flatten()
         if (all.isEmpty()) return@coroutineScope emptyList()
 
-        // Deduplicate by song-page path (dlPath) keeping first
-        val seen = LinkedHashSet<String>()
-        val deduped = all.filter { s ->
-            val key = s.dlPath.ifBlank { "${s.movieName}|${s.name}" }
-            seen.add(key)
-        }
-
-        StringMatcher.rankSongs(q, deduped)
+        StringMatcher.rankSongs(q, dedupeSongs(all))
             .take(maxResults)
             .map { (song, score) ->
                 RankedSong(
@@ -104,8 +97,20 @@ class MasstamilanRepository @Inject constructor(
     fun getDownloads(): Flow<List<DownloadEntity>> =
         database.downloadDao().getAllDownloads()
 
-    suspend fun insertDownload(download: DownloadEntity) {
-        database.downloadDao().insertDownload(download)
+    suspend fun insertDownload(download: DownloadEntity): Long {
+        return database.downloadDao().insertDownload(download)
+    }
+
+    suspend fun updateProgress(id: Long, status: String, progress: Float, downloaded: Long, total: Long) {
+        database.downloadDao().updateProgress(id, status, progress, downloaded, total)
+    }
+
+    suspend fun markCompleted(id: Long, filePath: String) {
+        database.downloadDao().markCompleted(id, "completed", filePath)
+    }
+
+    suspend fun markFailed(id: Long) {
+        database.downloadDao().updateProgress(id, "failed", 0f, 0L, 0L)
     }
 
     suspend fun updateDownload(download: DownloadEntity) {
@@ -114,5 +119,16 @@ class MasstamilanRepository @Inject constructor(
 
     suspend fun deleteDownload(id: Long) {
         database.downloadDao().deleteDownloadById(id)
+    }
+}
+
+/**
+ * Pure pipeline step of unified search: deduplicate scraped tracks by
+ * song-page path (dlPath), keeping first occurrence. Unit-tested.
+ */
+fun dedupeSongs(songs: List<SongResult>): List<SongResult> {
+    val seen = LinkedHashSet<String>()
+    return songs.filter { s ->
+        seen.add(s.dlPath.ifBlank { "${s.movieName}|${s.name}" })
     }
 }

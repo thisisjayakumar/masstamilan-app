@@ -174,12 +174,16 @@ class PlaybackManager @Inject constructor(
     }
 
     companion object {
-        /** Pure + unit-tested: only https MP3/downloader URLs are playable. */
+        /**
+         * Pure + unit-tested gate for what the player accepts:
+         * https streams (MP3 / downloader / CDN) plus local
+         * `content://` / `file://` URIs from completed downloads.
+         */
         fun isPlayableUrl(url: String): Boolean {
-            if (url.isBlank()) return false
             val u = url.trim()
+            if (u.isBlank() || u.contains(" ")) return false
+            if (u.startsWith("content://") || u.startsWith("file://")) return true
             if (!u.startsWith("https://")) return false
-            if (u.contains(" ")) return false
             return u.endsWith(".mp3") || "/downloader/" in u || "cdn" in u
         }
 

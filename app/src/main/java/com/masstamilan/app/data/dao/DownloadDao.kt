@@ -13,7 +13,13 @@ interface DownloadDao {
     fun getActiveDownloads(): Flow<List<DownloadEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertDownload(download: DownloadEntity)
+    suspend fun insertDownload(download: DownloadEntity): Long
+
+    @Query("UPDATE downloads SET status = :status, progress = :progress, downloadedBytes = :downloaded, totalBytes = :total WHERE id = :id")
+    suspend fun updateProgress(id: Long, status: String, progress: Float, downloaded: Long, total: Long)
+
+    @Query("UPDATE downloads SET status = :status, filePath = :filePath, progress = 1.0 WHERE id = :id")
+    suspend fun markCompleted(id: Long, status: String, filePath: String)
 
     @Update
     suspend fun updateDownload(download: DownloadEntity)

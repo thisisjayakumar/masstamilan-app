@@ -1,7 +1,7 @@
 package com.masstamilan.app
 
 import com.masstamilan.app.data.remote.MasstamilanParsers
-import com.masstamilan.app.data.remote.MiniJson
+import com.masstamilan.app.core.util.Json
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -115,7 +115,7 @@ class MasstamilanParsersTest {
     }
 
     @Test fun `miniJson parses escapes numbers and unicode`() {
-        val out = MiniJson.parseArrayOfObjects(
+        val out = Json.parseArrayOfObjects(
             """[{"n":"A \"B\"","id":101,"x":null,"t":true,"u":"\u0b85"}]"""
         )
         assertEquals(1, out.size)
@@ -127,15 +127,15 @@ class MasstamilanParsersTest {
     }
 
     @Test fun `miniJson empty array and malformed`() {
-        assertTrue(MiniJson.parseArrayOfObjects("[]").isEmpty())
+        assertTrue(Json.parseArrayOfObjects("[]").isEmpty())
         try {
-            MiniJson.parseArrayOfObjects("not json")
+            Json.parseArrayOfObjects("not json")
             fail("expected IllegalArgumentException")
         } catch (e: IllegalArgumentException) {
             // expected
         }
         try {
-            MiniJson.parseArrayOfObjects("""[{"n":"x"}""")
+            Json.parseArrayOfObjects("""[{"n":"x"}""")
             fail("expected IllegalArgumentException")
         } catch (e: IllegalArgumentException) {
             // expected

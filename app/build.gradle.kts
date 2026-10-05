@@ -135,10 +135,11 @@ dependencies {
     ksp("com.google.dagger:hilt-compiler:$hiltVersion")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
-    // OkHttp (for web scraping)
+    // OkHttp (for web scraping) + Jsoup (HTML parsing)
     val okhttpVersion = "4.12.0"
     implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
     implementation("com.squareup.okhttp3:logging-interceptor:$okhttpVersion")
+    implementation("org.jsoup:jsoup:1.17.2")
 
     // Coil for images
     implementation("io.coil-kt:coil-compose:2.5.0")

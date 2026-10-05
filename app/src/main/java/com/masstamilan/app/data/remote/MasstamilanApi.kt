@@ -3,20 +3,18 @@ package com.masstamilan.app.data.remote
 import com.masstamilan.app.data.model.AutocompleteSuggestion
 import com.masstamilan.app.data.model.SearchResult
 import com.masstamilan.app.data.model.SongResult
+import com.masstamilan.app.core.util.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
+import org.jsoup.select.Elements
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Network layer for masstamilan.dev (Rails SSR, no public API — HTML scrape).
- *
- * All I/O is suspend + Dispatchers.IO. All HTML/JSON parsing lives in
- * [MasstamilanParsers] (pure functions, unit-tested) so this class stays thin.
- */
 @Singleton
 class MasstamilanApi @Inject constructor(
     private val client: OkHttpClient
@@ -51,7 +49,6 @@ class MasstamilanApi @Inject constructor(
         return get("/search?keyword=$q&page=$page")
     }
 
-    /** Autocomplete JSON: [{n,s,l}] -> typed suggestions. Never throws. */
     suspend fun autocomplete(keyword: String): List<AutocompleteSuggestion> {
         if (keyword.isBlank()) return emptyList()
         return try {
@@ -73,8 +70,6 @@ class MasstamilanApi @Inject constructor(
         return get(p)
     }
 
-    // ---- High-level helpers (compose network + pure parsers) ----
-
     suspend fun searchMovies(keyword: String): List<SearchResult> {
         if (keyword.isBlank()) return emptyList()
         return try {
@@ -93,10 +88,6 @@ class MasstamilanApi @Inject constructor(
         }
     }
 
-    /**
-     * Resolve a playable stream URL for a song page path like "12345/song-mp3-song".
-     * Prefers 320kbps dlink, falls back to 128kbps, then albumTracks dl_path.
-     */
     suspend fun resolveStreamUrl(songPath: String, prefer320: Boolean = true): String? {
         return try {
             val html = getSongPage(songPath)
@@ -105,9 +96,6 @@ class MasstamilanApi @Inject constructor(
             null
         }
     }
-
-    // ---- Backward-compatible shims (pure, no I/O) ----
-    // Keep old call sites compiling; delegate to parsers.
 
     fun getSongsFromMoviePage(html: String): List<SongResult> =
         MasstamilanParsers.parseMovieTracks(html)
@@ -128,10 +116,6 @@ class MasstamilanApi @Inject constructor(
         MasstamilanParsers.parseAlbumTracksJson(json)
 }
 
-/**
- * One movie card as rendered by the site (home grid / search results).
- * [poster] is site-relative (e.g. "/i/jailer-2-tamil-2026.jpg").
- */
 data class MovieCard(
     val name: String,
     val slug: String,
@@ -139,86 +123,16 @@ data class MovieCard(
     val starring: String = ""
 )
 
-/**
- * Pure parsing functions — no Android, no I/O. Fully unit-testable.
- */
 object MasstamilanParsers {
 
-    // Matches: <h2 class="nostyle"><span itemprop="name">
-    //   <link itemprop="url" href="/12345/song-mp3-song" title="Download X mp3 song">Song Name</span>
-    private val SONG_LINK = Regex(
-        """<h2\s+class="nostyle">\s*<span\s+itemprop="name">\s*<link\s+itemprop="url"\s+href="(/(\d+)/[^"]+)"[^>]*title="Download\s+([^"]+?)\s+mp3 song"[^>]*>\s*([^<]+)""",
-        RegexOption.IGNORE_CASE
-    )
-    // Looser fallback: any song-page link
-    private val SONG_LINK_LOOSE = Regex(
-        """href="(/(\d+)/[a-z0-9\-]+-mp3-song)"[^>]{0,200}?title="Download\s+([^"]+?)(?:\s+mp3 song)?"""",
-        RegexOption.IGNORE_CASE
-    )
-    private val SONG_NAME_FALLBACK = Regex(
-        """href="/\d+/[a-z0-9\-]+-mp3-song"[^>]*>\s*([^<]{2,120})""",
-        RegexOption.IGNORE_CASE
-    )
 
-    private val ARTISTS = Regex(
-        """<b>\s*Artists:\s*</b>\s*<span\s+itemprop="byArtist">\s*([^<]+)""",
-        RegexOption.IGNORE_CASE
-    )
-    private val DURATION = Regex(
-        """<b>\s*Length:\s*</b>\s*<span\s+itemprop="duration">\s*([^<]+)""",
-        RegexOption.IGNORE_CASE
-    )
-    private val DOWNLOADS = Regex(
-        """<b>\s*Downloads:\s*</b>\s*<span[^>]*>\s*([\d,]+)""",
-        RegexOption.IGNORE_CASE
-    )
-    private val MOVIE_H1 = Regex("""<h1[^>]*>\s*([^<]{2,200})""", RegexOption.IGNORE_CASE)
-
-    // <a class="dlink" href="/downloader/..." ... title="Download X 320kbps" ...> 320kbps (8.1 MB)
-    private val DLINK = Regex(
-        """<a\s+class="dlink"\s+href="(/downloader/[^"]+)"[^>]*title="Download\s+[^"]*?(\d+kbps)"[^>]*>\s*(\d+kbps)""",
-        RegexOption.IGNORE_CASE
-    )
-
-    // window.albumTracks = [{...}]  — capture the array
-    private val ALBUM_TRACKS_JS = Regex(
-        """window\.albumTracks\s*=\s*(\[.*?\])\s*;""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-    )
-    private val JS_OBJ_FIELD = { field: String ->
-        Regex(""""$field"\s*:\s*(?:"((?:[^"\\]|\\.)*)"|(\d+))""")
-    }
-
-    private val IMG_IN_TRACK = Regex(""""img_name"\s*:\s*"([^"]+)"""")
-    private val DL_PATH_IN_TRACK = Regex(""""dl_path"\s*:\s*"([^"]+)"""")
-
-    // Movie cards (home + search). Live markup is:
-    //   <a href="/jailer-2-2026-songs" title="...">
-    //     <picture><source ...><img alt="..." title="..." src="/i/x.jpg" ...></picture>
-    //     <div class="mw0"><h2>Jailer 2</h2><p><b>Starring:</b> ...<br>...</p></div>
-    //   </a>
-    // so the old "<img ...><h2>" adjacency regex never matched.
-    private val CARD_ANCHOR = Regex(
-        """<a\s+href="([^"]+)"[^>]*>(.*?)</a>""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-    )
-    private val CARD_IMG = Regex("""<img[^>]*\ssrc="([^"]+)"""", RegexOption.IGNORE_CASE)
-    private val CARD_ALT = Regex("""<img[^>]*\salt="([^"]*)"""", RegexOption.IGNORE_CASE)
-    private val CARD_H2 = Regex("""<h2[^>]*>\s*([^<]+)""", RegexOption.IGNORE_CASE)
-    private val CARD_STARRING = Regex("""Starring:</b>\s*([^<]+)""", RegexOption.IGNORE_CASE)
-    private val TOTAL_RESULTS = Regex(
-        """(\d[\d,]*)\s+results?|page\s+1\s*/\s*(\d+)""",
-        RegexOption.IGNORE_CASE
-    )
 
     fun parseAutocomplete(json: String): List<AutocompleteSuggestion> {
         if (json.isBlank()) return emptyList()
         return try {
-            MiniJson.parseArrayOfObjects(json.trim()).mapNotNull { o ->
+            Json.parseArrayOfObjects(json.trim()).mapNotNull { o ->
                 val name = o["n"].ifNullOrBlank { o["name"] } ?: return@mapNotNull null
                 if (name.isBlank()) return@mapNotNull null
-                // Live payload: n=name, l=slug ("jailer-songs-3"), s=label ("Tamil — 2023").
-                // Older payloads had the slug in s — keep it as a fallback.
                 val link = (o["l"] ?: o["link"] ?: "").trim().trim('/')
                 val slug = link.ifBlank { (o["s"] ?: o["slug"] ?: "").trim().trim('/') }
                 if (slug.isBlank()) return@mapNotNull null
@@ -235,25 +149,28 @@ object MasstamilanParsers {
     }
 
     /**
-     * Shared movie-card parser for home and search pages.
-     * Returns name / slug (query-stripped) / relative poster / starring.
+     * Parse movie cards using Jsoup — robust against markup changes.
+     * Matches <a href="/movie-songs"> containing a <picture>/<img> and <h2>.
      */
     fun parseMovieCards(html: String): List<MovieCard> {
         if (html.isBlank()) return emptyList()
+        val doc = Jsoup.parse(html)
         val seen = LinkedHashSet<String>()
         val out = mutableListOf<MovieCard>()
-        CARD_ANCHOR.findAll(html).forEach { m ->
-            val href = m.groupValues[1].trim()
+        doc.select("a[href]").forEach { anchor ->
+            val href = anchor.attr("href").trim()
             if (!href.startsWith("/")) return@forEach
             val slug = href.substringBefore("?").substringBefore("#").trim()
             if (!slug.contains("-songs")) return@forEach
-            val body = m.groupValues[2]
-            val poster = CARD_IMG.find(body)?.groupValues?.get(1)?.trim() ?: return@forEach
-            val h2 = CARD_H2.find(body)?.groupValues?.get(1)?.trim().orEmpty()
-            val alt = CARD_ALT.find(body)?.groupValues?.get(1)?.trim().orEmpty()
-            val name = (h2.ifBlank { alt }).trim()
+            val img = anchor.selectFirst("img[src]") ?: return@forEach
+            val poster = img.attr("src").trim()
+            if (poster.isBlank()) return@forEach
+            val h2 = anchor.selectFirst("h2") ?: anchor.selectFirst("h2[title]")
+            val nameFromH2 = h2?.ownText()?.trim().orEmpty()
+            val alt = img.attr("alt").trim()
+            val name = if (nameFromH2.isNotBlank()) nameFromH2 else alt
             if (name.isBlank() || !seen.add(slug)) return@forEach
-            val starring = CARD_STARRING.find(body)?.groupValues?.get(1)?.trim().orEmpty()
+            val starring = extractStarring(anchor)
             out.add(
                 MovieCard(
                     name = decodeHtml(name),
@@ -266,78 +183,114 @@ object MasstamilanParsers {
         return out
     }
 
+    /** Text right after the <b>Starring:</b> label, stopping at the next <b>/<br>. */
+    private fun extractStarring(anchor: Element): String {
+        val p = anchor.selectFirst("p") ?: return ""
+        val kids = p.childNodes()
+        var i = kids.indexOfFirst {
+            it is Element && it.tagName() == "b" && it.text().contains("Starring", ignoreCase = true)
+        }
+        if (i < 0) return ""
+        val sb = StringBuilder()
+        i++
+        while (i < kids.size) {
+            val n = kids[i++]
+            if (n is Element && (n.tagName() == "b" || n.tagName() == "br")) break
+            if (n is org.jsoup.nodes.TextNode) sb.append(n.text())
+        }
+        return sb.toString().trim().trimEnd(',')
+    }
+
     fun parseSearchMovies(html: String): List<SearchResult> =
         parseMovieCards(html).map { SearchResult(name = it.name, slug = it.slug, image = it.poster) }
 
     fun parseMovieTracks(html: String, movieNameFallback: String = ""): List<SongResult> {
         if (html.isBlank()) return emptyList()
         val movieName = extractMovieName(html).ifBlank { movieNameFallback }
-        // Prefer albumTracks JS (has dl_path + img) when present
         val jsTracks = parseAlbumTracksFromHtml(html)
         if (jsTracks.isNotEmpty()) {
             return jsTracks.map { t ->
                 t.copy(movieName = t.movieName.ifBlank { movieName })
             }
         }
-        val artists = ARTISTS.find(html)?.groupValues?.get(1)?.trim()?.let(::decodeHtml) ?: ""
-        val imgName = IMG_IN_TRACK.find(html)?.groupValues?.get(1)?.trim() ?: ""
+        val doc = Jsoup.parse(html)
+        val artists = extractArtists(doc)
+        val imgName = extractImageName(doc)
         val songs = mutableListOf<SongResult>()
-        val matches = SONG_LINK.findAll(html).toList()
-        if (matches.isNotEmpty()) {
-            matches.forEach { m ->
-                val path = m.groupValues[1].trim()
-                val id = m.groupValues[2].toIntOrNull() ?: 0
-                val name = decodeHtml(m.groupValues[4].trim())
-                songs.add(
-                    SongResult(
-                        name = name, artists = artists, movieName = movieName,
-                        duration = durationNear(html, m.range.first),
-                        id = id, dlPath = path, imageName = imgName
-                    )
+        doc.select("h2.nostyle, h2[itemprop], h2").forEach { h2 ->
+            // Live markup nests a <link itemprop="url" href="/id/song-mp3-song"> inside the h2.
+            val path = h2.selectFirst("a[href]")?.attr("href")?.trim()
+                ?: h2.selectFirst("link[href]")?.attr("href")?.trim()
+                .orEmpty()
+            if (!path.startsWith("/") || !path.contains("-mp3-song")) return@forEach
+            val id = path.split("/").getOrNull(1)?.toIntOrNull() ?: 0
+            val name = decodeHtml(h2.text().trim())
+            if (name.isBlank()) return@forEach
+            songs.add(
+                SongResult(
+                    name = name, artists = artists, movieName = movieName,
+                    duration = extractDuration(doc, h2),
+                    id = id, dlPath = path, imageName = imgName
                 )
-            }
-            return songs
+            )
         }
-        // Loose fallback
-        SONG_LINK_LOOSE.findAll(html).forEach { m ->
-            val path = m.groupValues[1].trim()
-            val id = m.groupValues[2].toIntOrNull() ?: 0
-            val name = decodeHtml(m.groupValues[3].trim())
-            if (name.isNotBlank()) {
-                songs.add(
-                    SongResult(
-                        name = name, artists = artists, movieName = movieName,
-                        id = id, dlPath = path, imageName = imgName
-                    )
+        if (songs.isNotEmpty()) return songs
+        doc.select("a[href]").forEach { anchor ->
+            val href = anchor.attr("href").trim()
+            if (!href.matches(Regex("""/\d+/[a-z0-9\-]+-mp3-song"""))) return@forEach
+            val name = anchor.ownText().trim()
+            if (name.isBlank()) return@forEach
+            val id = href.split("/").getOrNull(1)?.toIntOrNull() ?: 0
+            songs.add(
+                SongResult(
+                    name = decodeHtml(name), artists = artists, movieName = movieName,
+                    id = id, dlPath = href, imageName = imgName
                 )
-            }
+            )
         }
         return songs
     }
 
-    private fun durationNear(html: String, pos: Int): String {
-        val window = html.substring(pos, minOf(html.length, pos + 3000))
-        return DURATION.find(window)?.groupValues?.get(1)?.trim() ?: ""
+    private fun extractArtists(doc: org.jsoup.nodes.Document): String {
+        val label = doc.select("b:contains(Artists)").firstOrNull()
+            ?: doc.select("b:contains(artist)").firstOrNull()
+            ?: return ""
+        val span = label.nextElementSibling()
+        return if (span != null) decodeHtml(span.ownText().trim()) else ""
+    }
+
+    private fun extractImageName(doc: org.jsoup.nodes.Document): String {
+        val img = doc.selectFirst("img[src]") ?: return ""
+        val src = img.attr("src").trim()
+        return src.substringAfterLast("/").substringBeforeLast(".", src)
+    }
+
+    private fun extractDuration(doc: org.jsoup.nodes.Document, anchor: Element): String {
+        val label = doc.select("b:contains(Length)").firstOrNull()
+            ?: doc.select("b:contains(length)").firstOrNull()
+            ?: return ""
+        val span = label.nextElementSibling()
+        return span?.ownText()?.trim() ?: ""
     }
 
     fun parseAlbumTracksFromHtml(html: String): List<SongResult> {
-        val m = ALBUM_TRACKS_JS.find(html) ?: return emptyList()
+        val m = Regex("""window\.albumTracks\s*=\s*(\[.*?\])\s*;""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(html)
+            ?: return emptyList()
         return parseAlbumTracksJson(m.groupValues[1])
     }
 
-    /** Accepts either a raw JSON array or {"albumTracks": [...]}. */
     fun parseAlbumTracksJson(json: String): List<SongResult> {
         if (json.isBlank()) return emptyList()
         val arrayText = run {
             val t = json.trim()
             if (t.startsWith("[")) return@run t
-            // object form: find albumTracks array
             val inner = Regex(""""albumTracks"\s*:\s*(\[.*\])""", RegexOption.DOT_MATCHES_ALL)
                 .find(t)?.groupValues?.get(1)
             inner ?: return emptyList()
         }
         return try {
-            MiniJson.parseArrayOfObjects(arrayText).map { o ->
+            Json.parseArrayOfObjects(arrayText).map { o ->
                 SongResult(
                     name = o["name"] ?: "",
                     artists = o["artists"] ?: "",
@@ -350,7 +303,6 @@ object MasstamilanParsers {
                 )
             }.filter { it.name.isNotBlank() }
         } catch (_: Exception) {
-            // Regex fallback for malformed JS objects
             parseAlbumTracksRegexFallback(arrayText)
         }
     }
@@ -360,7 +312,8 @@ object MasstamilanParsers {
         return objRe.findAll(arrayText).mapNotNull { m ->
             val o = m.value
             fun f(field: String): String =
-                JS_OBJ_FIELD(field).find(o)?.let { it.groupValues[1].ifBlank { it.groupValues[2] } } ?: ""
+                Regex(""""$field"\s*:\s*(?:"((?:[^"\\]|\\.)*)"|(\d+))""")
+                    .find(o)?.let { it.groupValues[1].ifBlank { it.groupValues[2] } } ?: ""
             val name = f("name")
             if (name.isBlank()) return@mapNotNull null
             SongResult(
@@ -372,7 +325,11 @@ object MasstamilanParsers {
         }.toList()
     }
 
-    /** All /downloader/... links keyed by quality label. */
+    private val DLINK = Regex(
+        """<a\s+class="dlink"\s+href="(/downloader/[^"]+)"[^>]*title="Download\s+[^"]*?(\d+kbps)"[^>]*>\s*(\d+kbps)""",
+        RegexOption.IGNORE_CASE
+    )
+
     fun extractDownloadLinks(html: String): Map<String, String> {
         if (html.isBlank()) return emptyMap()
         val out = LinkedHashMap<String, String>()
@@ -395,7 +352,6 @@ object MasstamilanParsers {
 
     fun extractStreamUrl(html: String, prefer320: Boolean = true): String? {
         extractDownloadUrl(html, if (prefer320) "320kbps" else "128kbps")?.let { return it }
-        // Fallback: albumTracks dl_path (relative /downloader/... or p128_cdn path)
         val track = parseAlbumTracksFromHtml(html).firstOrNull { it.dlPath.isNotBlank() }
         track?.let {
             val p = it.dlPath
@@ -406,7 +362,8 @@ object MasstamilanParsers {
     }
 
     fun extractMovieName(html: String): String {
-        val h1 = MOVIE_H1.find(html)?.groupValues?.get(1)?.trim() ?: return ""
+        val doc = Jsoup.parse(html)
+        val h1 = doc.selectFirst("h1")?.ownText()?.trim() ?: return ""
         return h1
             .replace("Tamil mp3 songs download.*".toRegex(RegexOption.IGNORE_CASE), "")
             .replace("MassTamilan.*".toRegex(RegexOption.IGNORE_CASE), "")
@@ -415,7 +372,8 @@ object MasstamilanParsers {
     }
 
     fun parseTotalResults(html: String): Int {
-        val m = TOTAL_RESULTS.find(html) ?: return -1
+        val m = Regex("""(\d[\d,]*)\s+results?|page\s+1\s*/\s*(\d+)""",
+            RegexOption.IGNORE_CASE).find(html) ?: return -1
         val num = m.groupValues[1].ifBlank { m.groupValues[2] }.replace(",", "")
         return num.toIntOrNull() ?: -1
     }
@@ -429,156 +387,4 @@ object MasstamilanParsers {
             .replace("&gt;", ">")
             .replace("&nbsp;", " ")
             .trim()
-}
-
-/**
- * Minimal JSON reader for flat arrays-of-objects (`[{...},{...}]`).
- * Avoids org.json (an Android stub that throws "not mocked" in local JVM
- * unit tests) and keeps zero new dependencies. Handles string escapes
- * (incl. \uXXXX), numbers, booleans and null; nested objects/arrays are
- * skipped. Throws IllegalArgumentException on malformed input.
- */
-object MiniJson {
-
-    fun parseArrayOfObjects(text: String): List<Map<String, String>> {
-        val p = Parser(text.trim())
-        p.ws()
-        if (!p.consume('[')) throw IllegalArgumentException("Expected JSON array")
-        val out = mutableListOf<Map<String, String>>()
-        p.ws()
-        if (p.consume(']')) return out
-        while (true) {
-            p.ws()
-            out.add(p.obj())
-            p.ws()
-            when {
-                p.consume(',') -> continue
-                p.consume(']') -> break
-                else -> throw IllegalArgumentException("Expected ',' or ']' in array")
-            }
-        }
-        return out
-    }
-
-    private class Parser(val s: String) {
-        var i = 0
-
-        fun ws() {
-            while (i < s.length && s[i].isWhitespace()) i++
-        }
-
-        fun consume(c: Char): Boolean {
-            if (i < s.length && s[i] == c) {
-                i++
-                return true
-            }
-            return false
-        }
-
-        fun expect(c: Char) {
-            if (!consume(c)) throw IllegalArgumentException("Expected '$c' at $i")
-        }
-
-        fun obj(): Map<String, String> {
-            expect('{')
-            val map = LinkedHashMap<String, String>()
-            ws()
-            if (consume('}')) return map
-            while (true) {
-                ws()
-                val key = str()
-                ws()
-                expect(':')
-                ws()
-                map[key] = value()
-                ws()
-                when {
-                    consume(',') -> continue
-                    consume('}') -> break
-                    else -> throw IllegalArgumentException("Expected ',' or '}' in object")
-                }
-            }
-            return map
-        }
-
-        fun value(): String {
-            if (i >= s.length) throw IllegalArgumentException("Unexpected end of JSON")
-            return when (s[i]) {
-                '"' -> str()
-                '{', '[' -> run {
-                    skipNested()
-                    ""
-                }
-                't' -> literal("true", "true")
-                'f' -> literal("false", "false")
-                'n' -> literal("null", "")
-                else -> number()
-            }
-        }
-
-        fun literal(word: String, result: String): String {
-            if (!s.startsWith(word, i)) throw IllegalArgumentException("Bad literal at $i")
-            i += word.length
-            return result
-        }
-
-        fun number(): String {
-            val start = i
-            while (i < s.length && (s[i].isDigit() || s[i] in "-+eE.")) i++
-            if (start == i) throw IllegalArgumentException("Bad value at $i")
-            return s.substring(start, i)
-        }
-
-        fun str(): String {
-            expect('"')
-            val sb = StringBuilder()
-            while (true) {
-                if (i >= s.length) throw IllegalArgumentException("Unterminated string")
-                val c = s[i++]
-                when (c) {
-                    '"' -> break
-                    '\\' -> {
-                        if (i >= s.length) throw IllegalArgumentException("Bad escape")
-                        when (val e = s[i++]) {
-                            '"', '\\', '/' -> sb.append(e)
-                            'b' -> sb.append('\b')
-                            'f' -> sb.append('\u000C')
-                            'n' -> sb.append('\n')
-                            'r' -> sb.append('\r')
-                            't' -> sb.append('\t')
-                            'u' -> {
-                                if (i + 4 > s.length) throw IllegalArgumentException("Bad \\u escape")
-                                sb.append(s.substring(i, i + 4).toInt(16).toChar())
-                                i += 4
-                            }
-                            else -> throw IllegalArgumentException("Bad escape \\$e")
-                        }
-                    }
-                    else -> sb.append(c)
-                }
-            }
-            return sb.toString()
-        }
-
-        fun skipNested() {
-            val open = s[i++]
-            val close = if (open == '{') '}' else ']'
-            var depth = 1
-            var inStr = false
-            while (i < s.length && depth > 0) {
-                val c = s[i++]
-                if (inStr) {
-                    if (c == '\\') i++
-                    else if (c == '"') inStr = false
-                } else {
-                    when (c) {
-                        '"' -> inStr = true
-                        open -> depth++
-                        close -> depth--
-                    }
-                }
-            }
-            if (depth != 0) throw IllegalArgumentException("Unbalanced $open")
-        }
-    }
 }

@@ -52,8 +52,12 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.core.util.Artwork
+import com.masstamilan.app.core.util.DownloadHelper
+import com.masstamilan.app.data.model.DownloadEntity
 import com.masstamilan.app.data.model.RankedSong
+import com.masstamilan.app.data.model.pagePathOf
 import com.masstamilan.app.data.model.toQueue
+import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.repository.MasstamilanRepository
 import com.masstamilan.app.ui.theme.Card as CardColor
 import com.masstamilan.app.ui.theme.Primary
@@ -72,6 +76,7 @@ import kotlinx.coroutines.launch
 interface SearchEntryPoint {
     fun repository(): MasstamilanRepository
     fun playbackManager(): PlaybackManager
+    fun downloadHelper(): DownloadHelper
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,6 +92,8 @@ fun SearchScreen(
         EntryPointAccessors.fromApplication(appContext, SearchEntryPoint::class.java)
     }
     val playbackManager = remember { entryPoint.playbackManager() }
+    val repository = remember { entryPoint.repository() }
+    val downloadHelper = remember { entryPoint.downloadHelper() }
     val scope = rememberCoroutineScope()
 
     val state by viewModel.uiState.collectAsState()
@@ -106,6 +113,69 @@ fun SearchScreen(
             navController.navigate("player/${item.song.id}")
         } else {
             toast = "Couldn't resolve stream for \"${item.song.name}\""
+        }
+    }
+
+    fun enqueueDownload(item: RankedSong) {
+        scope.launch {
+            val song = item.song
+            toast = "Starting download: ${song.name}"
+            // Fast path: albumTracks dl_path is already a signed stream URL.
+            val direct = song.dlPath.trim().takeIf { it.startsWith("/downloader/") }
+                ?.let { MasstamilanApi.BASE_URL + it }
+            val (url, quality) = if (direct != null) {
+                direct to if ("d320" in song.dlPath) "320kbps" else "128kbps"
+            } else {
+                val pagePath = pagePathOf(song.dlPath)
+                if (pagePath.isBlank()) {
+                    toast = "No download link for \"${song.name}\""
+                    return@launch
+                }
+                val options = downloadHelper.songQualities(pagePath)
+                val best = options.firstOrNull { it.quality == "320kbps" }
+                    ?: options.firstOrNull()
+                if (best == null) {
+                    toast = "No download link for \"${song.name}\""
+                    return@launch
+                }
+                best.url to best.quality
+            }
+            val rowId = repository.insertDownload(
+                DownloadEntity(
+                    songId = song.id,
+                    songName = song.name,
+                    artist = song.artists,
+                    movieName = song.movieName,
+                    downloadUrl = url,
+                    quality = quality,
+                    status = "downloading"
+                )
+            )
+            var lastPushed = 0f
+            val result = downloadHelper.download(url, song.name, song.artists) { p, done, total ->
+                // Throttle Room writes: push at most every ~5% of progress.
+                if (p - lastPushed >= 0.05f || (total > 0 && done >= total)) {
+                    lastPushed = p
+                    scope.launch {
+                        repository.updateProgress(rowId, "downloading", p, done, total)
+                    }
+                }
+            }
+            result.fold(
+                onSuccess = { file ->
+                    scope.launch {
+                        repository.markCompleted(rowId, file.path)
+                        toast = "Downloaded \"${song.name}\""
+                        navController.navigate("downloads")
+                    }
+                },
+                onFailure = {
+                    scope.launch {
+                        repository.markFailed(rowId)
+                        toast = "Download failed — check connection"
+                    }
+                }
+            )
         }
     }
 
@@ -200,11 +270,7 @@ fun SearchScreen(
                             item = item,
                             isPlaying = playingId == item.song.id,
                             onPlay = { instantPlay(item) },
-                            onDownload = {
-                                scope.launch {
-                                    navController.navigate("downloads")
-                                }
-                            }
+                            onDownload = { enqueueDownload(item) }
                         )
                     }
                 }

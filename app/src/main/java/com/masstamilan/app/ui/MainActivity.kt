@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.masstamilan.app.core.di.AppModule
 import com.masstamilan.app.feature.home.HomeScreen
 import com.masstamilan.app.feature.player.PlayerScreen
 import com.masstamilan.app.feature.search.SearchScreen

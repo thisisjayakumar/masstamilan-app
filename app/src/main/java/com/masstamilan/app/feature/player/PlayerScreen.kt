@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -39,6 +40,7 @@ import com.masstamilan.app.ui.theme.*
 import dagger.hilt.android.EntryPointAccessors
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +72,20 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
     val title = resolvedManager.currentTitle().ifBlank { "Playing" }
     val artist = resolvedManager.currentArtist()
     val artwork = resolvedManager.currentArtwork().ifBlank { null }
+
+    // Like state for the current queue entry.
+    val entryPoint = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext, AppEntryPoint::class.java
+        )
+    }
+    val library = remember { entryPoint.libraryRepository() }
+    val scope = rememberCoroutineScope()
+    val currentTrack = queue.getOrNull(trackIndex)
+    var isFav by remember { mutableStateOf(false) }
+    LaunchedEffect(currentTrack) {
+        isFav = currentTrack?.let { library.isFavorite(it) } ?: false
+    }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -124,8 +140,17 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* queue / more */ }) {
-                        Icon(Icons.Default.FavoriteBorder, "Like", tint = TextSecondary)
+                    IconButton(
+                        onClick = {
+                            val track = currentTrack ?: return@IconButton
+                            scope.launch { isFav = library.toggleFavorite(track) }
+                        }
+                    ) {
+                        Icon(
+                            if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            "Like",
+                            tint = if (isFav) Primary else TextSecondary
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)

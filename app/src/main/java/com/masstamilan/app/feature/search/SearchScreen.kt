@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -51,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.masstamilan.app.core.media.PlaybackManager
+import com.masstamilan.app.core.settings.UserPreferences
 import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.core.util.DownloadHelper
 import com.masstamilan.app.data.model.DownloadEntity
@@ -59,6 +61,7 @@ import com.masstamilan.app.data.model.pagePathOf
 import com.masstamilan.app.data.model.toQueue
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.repository.MasstamilanRepository
+import com.masstamilan.app.feature.common.SongActionsSheet
 import com.masstamilan.app.ui.theme.Card as CardColor
 import com.masstamilan.app.ui.theme.Primary
 import com.masstamilan.app.ui.theme.Surface
@@ -77,6 +80,7 @@ interface SearchEntryPoint {
     fun repository(): MasstamilanRepository
     fun playbackManager(): PlaybackManager
     fun downloadHelper(): DownloadHelper
+    fun userPreferences(): UserPreferences
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,11 +98,13 @@ fun SearchScreen(
     val playbackManager = remember { entryPoint.playbackManager() }
     val repository = remember { entryPoint.repository() }
     val downloadHelper = remember { entryPoint.downloadHelper() }
+    val prefs = remember { entryPoint.userPreferences() }
     val scope = rememberCoroutineScope()
 
     val state by viewModel.uiState.collectAsState()
     var playingId by remember { mutableStateOf<Int?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
+    var menuSong by remember { mutableStateOf<RankedSong?>(null) }
 
     LaunchedEffect(initialQuery) {
         if (initialQuery.isNotBlank()) viewModel.onQueryChange(initialQuery)
@@ -132,8 +138,12 @@ fun SearchScreen(
                     return@launch
                 }
                 val options = downloadHelper.songQualities(pagePath)
-                val best = options.firstOrNull { it.quality == "320kbps" }
-                    ?: options.firstOrNull()
+                val wantHigh = prefs.preferHighQualityDownload()
+                val best = if (wantHigh) {
+                    options.firstOrNull { it.quality == "320kbps" } ?: options.firstOrNull()
+                } else {
+                    options.firstOrNull { it.quality == "128kbps" } ?: options.firstOrNull()
+                }
                 if (best == null) {
                     toast = "No download link for \"${song.name}\""
                     return@launch
@@ -270,7 +280,8 @@ fun SearchScreen(
                             item = item,
                             isPlaying = playingId == item.song.id,
                             onPlay = { instantPlay(item) },
-                            onDownload = { enqueueDownload(item) }
+                            onDownload = { enqueueDownload(item) },
+                            onMore = { menuSong = item }
                         )
                     }
                 }
@@ -284,6 +295,19 @@ fun SearchScreen(
                     Text(it, color = TextSecondary, modifier = Modifier.padding(8.dp))
                 }
             }
+            menuSong?.let { item ->
+                SongActionsSheet(
+                    song = item.song,
+                    movieSlug = item.movieSlug,
+                    onDismiss = { menuSong = null },
+                    onPlay = { instantPlay(item) },
+                    onDownload = { enqueueDownload(item) },
+                    onAlbum = {
+                        val slug = item.movieSlug.trim('/').ifBlank { return@SongActionsSheet }
+                        navController.navigate("song_detail/$slug")
+                    }
+                )
+            }
         }
     }
 }
@@ -293,7 +317,8 @@ fun RankedSongRow(
     item: RankedSong,
     isPlaying: Boolean,
     onPlay: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onMore: () -> Unit
 ) {
     val song = item.song
     val artUrl = remember(song.imageName) {
@@ -340,6 +365,9 @@ fun RankedSongRow(
             }
             IconButton(onClick = onDownload) {
                 Icon(Icons.Default.Download, "Download", tint = TextSecondary)
+            }
+            IconButton(onClick = onMore) {
+                Icon(Icons.Default.MoreVert, "More options", tint = TextSecondary)
             }
         }
     }

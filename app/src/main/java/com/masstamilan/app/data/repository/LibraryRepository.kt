@@ -48,6 +48,8 @@ class LibraryRepository @Inject constructor(
     // ---- Playlists ----
     suspend fun createPlaylist(name: String): Long = playlistDao.insertPlaylist(PlaylistEntity(name = name))
 
+    suspend fun getPlaylist(id: Long): PlaylistEntity? = playlistDao.get(id)
+
     suspend fun renamePlaylist(id: Long, name: String) {
         playlistDao.updatePlaylist(playlistDao.get(id)?.copy(name = name, updatedAt = System.currentTimeMillis()) ?: return)
     }
@@ -56,7 +58,8 @@ class LibraryRepository @Inject constructor(
         playlistDao.clearSongs(id); playlistDao.deletePlaylist(id)
     }
 
-    suspend fun addSongToPlaylist(pid: Long, t: QueueTrack, position: Int) {
+    suspend fun addSongToPlaylist(pid: Long, t: QueueTrack) {
+        val position = playlistDao.observeSongs(pid).first().size
         playlistDao.insertSong(PlaylistSongEntity(
             playlistId = pid, position = position, songKey = favoriteKey(t),
             songId = t.songId, name = t.title, artists = t.artist,
@@ -73,3 +76,42 @@ class LibraryRepository @Inject constructor(
     suspend fun playlistSongsList(pid: Long): List<PlaylistSongEntity> =
         playlistDao.observeSongs(pid).first()
 }
+
+/**
+ * Pure mappers: stored library rows → playable queue entries.
+ * Song-page paths resolve lazily via StreamResolver; unit-tested.
+ */
+fun PlaylistSongEntity.toQueueTrack(): QueueTrack = QueueTrack(
+    title = name,
+    artist = artists,
+    artwork = imageName,
+    songPagePath = songPagePath,
+    movieSlug = movieSlug,
+    songId = songId
+)
+
+fun FavoriteEntity.toQueueTrack(): QueueTrack = QueueTrack(
+    title = name,
+    artist = artists,
+    artwork = imageName,
+    songPagePath = songPagePath,
+    movieSlug = movieSlug,
+    songId = songId
+)
+
+/** Build a QueueTrack for library actions from a scraped song + its page path. */
+fun queueTrackFor(
+    songId: Int,
+    title: String,
+    artist: String,
+    artwork: String,
+    songPagePath: String,
+    movieSlug: String
+): QueueTrack = QueueTrack(
+    title = title,
+    artist = artist,
+    artwork = artwork,
+    songPagePath = songPagePath,
+    movieSlug = movieSlug,
+    songId = songId
+)

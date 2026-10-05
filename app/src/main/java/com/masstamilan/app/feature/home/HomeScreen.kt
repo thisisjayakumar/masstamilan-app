@@ -56,22 +56,6 @@ fun HomeScreen(navController: NavController, api: MasstamilanApi? = null) {
                 title = { Text("MassTamilan", color = TextPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface)
             )
-        },
-        bottomBar = {
-            NavigationBar(containerColor = Surface) {
-                NavigationBarItem(
-                    selected = true,
-                    onClick = {},
-                    label = { Text("Home") },
-                    icon = { Icon(Icons.Default.Search, "Home") }
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("search") },
-                    label = { Text("Search") },
-                    icon = { Icon(Icons.Default.Search, "Search") }
-                )
-            }
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {

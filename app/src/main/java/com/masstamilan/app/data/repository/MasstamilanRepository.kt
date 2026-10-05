@@ -63,9 +63,9 @@ class MasstamilanRepository @Inject constructor(
         }
         if (movies.isEmpty()) return@coroutineScope emptyList()
 
-        val perMovie: List<List<SongResult>> = movies.map { movie ->
+        val perMovie: List<Pair<String, List<SongResult>>> = movies.map { movie ->
             async {
-                try {
+                val tracks = try {
                     api.getSongsFromMovieSlug(movie.slug).map { song ->
                         // Backfill movie name from card when page parse misses it
                         if (song.movieName.isBlank()) song.copy(movieName = movie.name)
@@ -74,19 +74,25 @@ class MasstamilanRepository @Inject constructor(
                 } catch (_: Exception) {
                     emptyList()
                 }
+                movie.slug to tracks
             }
         }.awaitAll()
 
-        val all = perMovie.flatten()
+        val all = perMovie.flatMap { (slug, tracks) -> tracks.map { slug to it } }
         if (all.isEmpty()) return@coroutineScope emptyList()
 
-        StringMatcher.rankSongs(q, dedupeSongs(all))
+        // Remember which movie page each song came from (first wins) so the
+        // UI can deep-link to the album even after dedupe + ranking.
+        val slugByKey = LinkedHashMap<String, String>()
+        all.forEach { (slug, song) -> slugByKey.putIfAbsent(dedupeKey(song), slug) }
+
+        StringMatcher.rankSongs(q, dedupeSongs(all.map { it.second }))
             .take(maxResults)
             .map { (song, score) ->
                 RankedSong(
                     song = song,
                     score = score,
-                    movieSlug = slugFor(song)
+                    movieSlug = slugByKey[dedupeKey(song)] ?: slugFor(song)
                 )
             }
     }
@@ -123,12 +129,15 @@ class MasstamilanRepository @Inject constructor(
 }
 
 /**
+ * Dedupe key: song-page path when present, else movie+name fallback.
+ */
+fun dedupeKey(s: SongResult): String = s.dlPath.ifBlank { "${s.movieName}|${s.name}" }
+
+/**
  * Pure pipeline step of unified search: deduplicate scraped tracks by
  * song-page path (dlPath), keeping first occurrence. Unit-tested.
  */
 fun dedupeSongs(songs: List<SongResult>): List<SongResult> {
     val seen = LinkedHashSet<String>()
-    return songs.filter { s ->
-        seen.add(s.dlPath.ifBlank { "${s.movieName}|${s.name}" })
-    }
+    return songs.filter { s -> seen.add(dedupeKey(s)) }
 }

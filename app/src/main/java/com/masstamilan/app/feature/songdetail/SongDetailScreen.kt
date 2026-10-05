@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +22,7 @@ import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.model.toQueue
 import com.masstamilan.app.data.remote.MasstamilanApi
+import com.masstamilan.app.feature.common.SongActionsSheet
 import com.masstamilan.app.ui.theme.*
 import dagger.hilt.android.EntryPointAccessors
 
@@ -32,6 +34,7 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
     var loading by remember { mutableStateOf(true) }
     var playingIndex by remember { mutableIntStateOf(-1) }
     var toast by remember { mutableStateOf<String?>(null) }
+    var menuSong by remember { mutableStateOf<SongResult?>(null) }
 
     // NavHost passes no api/helper; resolve Hilt singletons instead.
     val entryPoint = remember {
@@ -90,7 +93,8 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
                             song = song,
                             playingIndex = playingIndex,
                             onPlay = { playSong(song) },
-                            onDownload = { navController.navigate("downloads") }
+                            onDownload = { navController.navigate("downloads") },
+                            onMore = { menuSong = song }
                         )
                     }
                 }
@@ -104,6 +108,16 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
                     Text(it, color = TextSecondary, modifier = Modifier.padding(8.dp))
                 }
             }
+            menuSong?.let { song ->
+                SongActionsSheet(
+                    song = song,
+                    movieSlug = movieSlug,
+                    onDismiss = { menuSong = null },
+                    onPlay = { playSong(song) },
+                    onDownload = { navController.navigate("downloads") },
+                    onAlbum = { /* already on the album */ }
+                )
+            }
         }
     }
 }
@@ -113,7 +127,8 @@ fun SongListItem(
     song: SongResult,
     playingIndex: Int,
     onPlay: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onMore: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -143,6 +158,9 @@ fun SongListItem(
                 }
                 IconButton(onClick = onDownload) {
                     Icon(Icons.Default.Download, "Download", tint = TextSecondary, modifier = Modifier.size(24.dp))
+                }
+                IconButton(onClick = onMore) {
+                    Icon(Icons.Default.MoreVert, "More options", tint = TextSecondary, modifier = Modifier.size(24.dp))
                 }
             }
         }

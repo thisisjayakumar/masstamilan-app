@@ -7,6 +7,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.core.media.StreamResolver
+import com.masstamilan.app.core.settings.UserPreferences
 import com.masstamilan.app.core.util.DownloadHelper
 import com.masstamilan.app.data.dao.DownloadDao
 import com.masstamilan.app.data.dao.FavoriteDao
@@ -83,8 +84,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideStreamResolver(api: MasstamilanApi): StreamResolver =
-        StreamResolver { pagePath -> api.resolveStreamUrl(pagePath) }
+    fun provideStreamResolver(api: MasstamilanApi, prefs: UserPreferences): StreamResolver =
+        StreamResolver { pagePath ->
+            api.resolveStreamUrl(pagePath, prefs.preferHighQualityStream())
+        }
 
     @Provides
     @Singleton
@@ -105,4 +108,5 @@ interface AppEntryPoint {
     fun libraryRepository(): LibraryRepository
     fun downloadHelper(): DownloadHelper
     fun playbackManager(): PlaybackManager
+    fun userPreferences(): UserPreferences
 }

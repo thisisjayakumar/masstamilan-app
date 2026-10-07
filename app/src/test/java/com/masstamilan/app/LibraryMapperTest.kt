@@ -6,6 +6,7 @@ import com.masstamilan.app.data.model.QueueTrack
 import com.masstamilan.app.data.repository.dedupeKey
 import com.masstamilan.app.data.repository.directStreamUrl
 import com.masstamilan.app.data.repository.queueTrackFor
+import com.masstamilan.app.data.repository.selectRefreshMatch
 import com.masstamilan.app.data.repository.shuffledQueueWithStart
 import com.masstamilan.app.data.repository.toQueueTrack
 import org.junit.Assert.*
@@ -112,6 +113,29 @@ class LibraryMapperTest {
         val (shuffled, idx) = shuffledQueueWithStart(emptyList(), 0)
         assertTrue(shuffled.isEmpty())
         assertEquals(0, idx)
+    }
+
+    @Test fun `selectRefreshMatch prefers song id then title`() {
+        val songs = listOf(
+            com.masstamilan.app.data.model.SongResult(
+                id = 1, name = "One Sun One Moon", dlPath = "/downloader/p/1",
+                pagePath = "4738/one-sun-one-moon-mp3-song"
+            ),
+            com.masstamilan.app.data.model.SongResult(
+                id = 2, name = "Ala Bolelo ", dlPath = "/downloader/p/2",
+                pagePath = "4738/ala-bolelo-mp3-song"
+            )
+        )
+        val byId = selectRefreshMatch(
+            songs, QueueTrack(title = "renamed?", songId = 2, movieSlug = "m")
+        )
+        assertEquals("4738/ala-bolelo-mp3-song", byId?.pagePath)
+        val byTitle = selectRefreshMatch(
+            songs, QueueTrack(title = "ala  bolelo", songId = 0, movieSlug = "m")
+        )
+        assertEquals(2, byTitle?.id)
+        assertNull(selectRefreshMatch(songs, QueueTrack(title = "Nope", songId = 9, movieSlug = "m")))
+        assertNull(selectRefreshMatch(emptyList(), QueueTrack(title = "A", songId = 1, movieSlug = "m")))
     }
 
     @Test fun `dedupeKey prefers dlPath`() {

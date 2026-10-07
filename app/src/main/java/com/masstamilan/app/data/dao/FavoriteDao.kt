@@ -21,6 +21,9 @@ interface FavoriteDao {
     @Query("DELETE FROM favorites WHERE songKey = :key")
     suspend fun deleteByKey(key: String)
 
+    @Query("UPDATE favorites SET songKey = :newKey, songPagePath = :pagePath WHERE songKey = :oldKey")
+    suspend fun rekey(oldKey: String, newKey: String, pagePath: String)
+
     @Query("SELECT COUNT(*) FROM favorites")
     suspend fun count(): Int
 }

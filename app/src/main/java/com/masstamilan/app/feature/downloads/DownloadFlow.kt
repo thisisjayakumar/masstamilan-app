@@ -23,7 +23,7 @@ import com.masstamilan.app.core.util.DownloadHelper
 import com.masstamilan.app.core.util.DownloadOption
 import com.masstamilan.app.data.model.DownloadEntity
 import com.masstamilan.app.data.model.SongResult
-import com.masstamilan.app.data.model.pagePathOf
+import com.masstamilan.app.data.model.songPagePathOf
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.repository.MasstamilanRepository
 import com.masstamilan.app.ui.theme.TextPrimary
@@ -100,7 +100,7 @@ suspend fun resolveDownloadOptions(
     song: SongResult,
     downloadHelper: DownloadHelper
 ): List<DownloadOption> {
-    val pagePath = pagePathOf(song.dlPath)
+    val pagePath = songPagePathOf(song)
     if (pagePath.isNotBlank()) {
         val fromPage = downloadHelper.songQualities(pagePath)
         if (fromPage.isNotEmpty()) return fromPage

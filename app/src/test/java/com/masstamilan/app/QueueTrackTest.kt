@@ -2,6 +2,7 @@ package com.masstamilan.app
 
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.model.pagePathOf
+import com.masstamilan.app.data.model.songPagePathOf
 import com.masstamilan.app.data.model.stepIndex
 import com.masstamilan.app.data.model.toQueue
 import org.junit.Assert.*
@@ -39,5 +40,30 @@ class QueueTrackTest {
         assertEquals("9/b-mp3-song", queue[1].songPagePath)
         assertEquals("movie-songs", queue[1].movieSlug)
         assertEquals(2, queue[1].songId)
+    }
+
+    @Test fun `songPagePathOf prefers parser pagePath over dlPath`() {
+        // Album-JSON case: preview-stream dlPath + anchor pagePath → pagePath wins.
+        val fromAlbum = SongResult(
+            name = "Ala Bolelo", id = 45295,
+            dlPath = "/downloader/sig/ts/p128_cdn/45295/abc",
+            pagePath = "4738/ala-bolelo-mp3-song"
+        )
+        assertEquals("4738/ala-bolelo-mp3-song", songPagePathOf(fromAlbum))
+        // Legacy case without pagePath falls back to dlPath derivation.
+        assertEquals("9/b-mp3-song", songPagePathOf(SongResult(dlPath = "/9/b-mp3-song")))
+        assertEquals("", songPagePathOf(SongResult(dlPath = "/downloader/s/ts/d128/1/a")))
+    }
+
+    @Test fun `toQueue keeps anchor pagePath alongside direct stream`() {
+        val queue = listOf(
+            SongResult(
+                name = "Ala Bolelo", artists = "Anirudh", id = 45295,
+                dlPath = "/downloader/sig/ts/p128_cdn/45295/abc",
+                pagePath = "4738/ala-bolelo-mp3-song"
+            )
+        ).toQueue("jailer-2-2026-songs")
+        assertEquals("https://www.masstamilan.dev/downloader/sig/ts/p128_cdn/45295/abc", queue[0].streamUrl)
+        assertEquals("4738/ala-bolelo-mp3-song", queue[0].songPagePath)
     }
 }

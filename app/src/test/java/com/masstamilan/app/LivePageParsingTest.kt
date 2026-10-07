@@ -43,6 +43,25 @@ class LivePageParsingTest {
         assertTrue(songs.all { it.name.isNotBlank() })
     }
 
+    @Test fun `movie page tracks carry song page paths for quality resolution`() {
+        val songs = MasstamilanParsers.parseMovieTracks(fixture("movie.html"))
+        assertTrue(
+            "expected every track to have a page path, missing: " +
+                songs.filter { it.pagePath.isBlank() }.map { it.name },
+            songs.all { it.pagePath.isNotBlank() }
+        )
+        assertEquals(
+            "4738/ala-bolelo-mp3-song",
+            songs.first { it.name == "Ala Bolelo" }.pagePath
+        )
+    }
+
+    @Test fun `song page exposes both download qualities`() {
+        val links = MasstamilanParsers.extractDownloadLinks(fixture("song.html"))
+        assertTrue("expected 128kbps, got ${links.keys}", links.containsKey("128kbps"))
+        assertTrue("expected 320kbps, got ${links.keys}", links.containsKey("320kbps"))
+    }
+
     @Test fun `song page resolves 320kbps stream url`() {
         val url = MasstamilanParsers.extractStreamUrl(fixture("song.html"), prefer320 = true)
         assertNotNull(url)

@@ -1,6 +1,7 @@
 package com.masstamilan.app
 
 import com.masstamilan.app.core.media.PlaybackManager
+import com.masstamilan.app.core.media.TrackRefresher
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -64,7 +65,7 @@ class PlaybackUrlTest {
     }
 
     @Test fun `isResolvable requires url or page path`() {
-        val manager = PlaybackManager { null }
+        val manager = PlaybackManager({ null }, TrackRefresher { null })
         assertTrue(
             manager.isResolvable(
                 com.masstamilan.app.data.model.QueueTrack(
@@ -82,6 +83,31 @@ class PlaybackUrlTest {
                 com.masstamilan.app.data.model.QueueTrack(title = "legacy row")
             )
         )
+        // Legacy library rows with only a movie slug attempt a movie-page refresh.
+        assertTrue(
+            manager.isResolvable(
+                com.masstamilan.app.data.model.QueueTrack(
+                    title = "legacy row", movieSlug = "ram-songs", songId = 7
+                )
+            )
+        )
+        assertTrue(
+            manager.needsRefresh(
+                com.masstamilan.app.data.model.QueueTrack(
+                    title = "legacy row", movieSlug = "ram-songs", songId = 7
+                )
+            )
+        )
+        assertFalse(
+            manager.needsRefresh(
+                com.masstamilan.app.data.model.QueueTrack(
+                    streamUrl = "https://cdn.example.com/x.mp3", title = "A"
+                )
+            )
+        )
+        assertTrue(PlaybackManager.isLocalUri("content://media/external/audio/media/42"))
+        assertTrue(PlaybackManager.isLocalUri("file:///storage/emulated/0/Music/x.mp3"))
+        assertFalse(PlaybackManager.isLocalUri("https://cdn.example.com/x.mp3"))
     }
 
     @Test fun `320 preferred over 128 in parser`() {        val html = """

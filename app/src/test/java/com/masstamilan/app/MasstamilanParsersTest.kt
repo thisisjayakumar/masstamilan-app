@@ -33,6 +33,14 @@ class MasstamilanParsersTest {
         assertEquals("Vaaranam Aayiram", songs[0].movieName)
     }
 
+    @Test fun `movie tracks map song page path from track anchors`() {
+        val songs = MasstamilanParsers.parseMovieTracks(movieHtml)
+        assertEquals(1, songs.size)
+        // window.albumTracks dl_path is a p/d128 preview stream, so the page
+        // path must come from the track-table link — this unlocks 320kbps.
+        assertEquals("101/munbe-vaa-mp3-song", songs[0].pagePath)
+    }
+
     @Test fun `movie tracks fallback to h2 link when no JS block`() {
         val html = """
             <h1>Ram Tamil mp3 songs</h1>
@@ -237,5 +245,32 @@ class MasstamilanParsersTest {
         """.trimIndent()
         val url = MasstamilanParsers.extractStreamUrl(html, prefer320 = true)
         assertEquals("https://www.masstamilan.dev/downloader/sig/ts/d320_cdn/45295/xyz", url)
+    }
+
+    @Test fun `live song page dlinks yield both qualities verbatim markup`() {
+        // Verbatim live markup: note the space before `>` on the 128kbps link.
+        val html = """
+            <a class="dlink" href="/downloader/q2Jxnjyhk7b5wGJXZX_iJg/1791432239/d128_cdn/45295/MjQwNjo3NDAwOjExMzphZjgzOmNiMWQ6Zjg3NDo4ZTBmOjM2Mw==" rel="nofollow" title="Download Ala Bolelo 128kbps" >128kbps (3.7 MB)</a>
+            <a class="dlink" href="/downloader/q2Jxnjyhk7b5wGJXZX_iJg/1791432239/d320_cdn/45295/MjQwNjo3NDAwOjExMzphZjgzOmNiMWQ6Zjg3NDo4ZTBmOjM2Mw==" rel="nofollow" title="Download Ala Bolelo 320kbps">320kbps (7.8 MB)</a>
+        """.trimIndent()
+        val links = MasstamilanParsers.extractDownloadLinks(html)
+        assertEquals(2, links.size)
+        assertTrue(links["128kbps"]!!.contains("d128_cdn"))
+        assertTrue(links["320kbps"]!!.contains("d320_cdn"))
+    }
+
+    @Test fun `song page paths extracted from track anchors`() {
+        val html = """
+            <h2 class="nostyle"><span itemprop="name">
+              <link itemprop="url" href="/4738/one-sun-one-moon-mp3-song">
+              <a href="/4738/one-sun-one-moon-mp3-song" title="Download One Sun One Moon mp3 song">One Sun One Moon</a>
+            </span></h2>
+            <h2 class="nostyle"><span itemprop="name">Ala Bolelo </span></h2>
+            <a class="dlink" href="/downloader/x/d128_cdn/45295/y" title="Download Ala Bolelo 128kbps">128kbps</a>
+        """.trimIndent()
+        val paths = MasstamilanParsers.extractSongPagePaths(html)
+        assertEquals("4738/one-sun-one-moon-mp3-song", paths["one sun one moon"])
+        // dlink anchors must not leak in as song pages
+        assertTrue(paths.keys.none { it.contains("kbps") })
     }
 }

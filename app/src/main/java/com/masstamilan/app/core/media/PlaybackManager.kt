@@ -32,9 +32,19 @@ fun interface StreamResolver {
     suspend fun resolve(pagePath: String): String?
 }
 
+/**
+ * Enriches a library track that has no song-page path (pre-pagePath rows):
+ * re-fetches its movie page and matches by song id/name. Null when impossible.
+ * Injected so the manager stays network-agnostic.
+ */
+fun interface TrackRefresher {
+    suspend fun refresh(track: QueueTrack): QueueTrack?
+}
+
 @Singleton
 class PlaybackManager @Inject constructor(
-    private val streamResolver: StreamResolver
+    private val streamResolver: StreamResolver,
+    private val trackRefresher: TrackRefresher
 ) {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
@@ -143,15 +153,30 @@ class PlaybackManager @Inject constructor(
 
     private suspend fun loadAt(index: Int, autoplay: Boolean) {
         val context = appContext ?: return
-        val track = _queue.value.getOrNull(index) ?: return
-        val url = track.streamUrl
-            ?: track.songPagePath.takeIf { it.isNotBlank() }?.let {
-                try {
-                    streamResolver.resolve(it)
-                } catch (_: Exception) {
-                    null
-                }
+        var track = _queue.value.getOrNull(index) ?: return
+        // Local files play directly — never re-resolve or refresh them.
+        var url = track.streamUrl?.takeIf { isLocalUri(it) && isPlayableUrl(it) }
+        if (url == null) {
+            // Lively resolution: signed download URLs expire (~1 day), so a
+            // stored streamUrl is only a fallback. Fresh-resolve first.
+            url = track.songPagePath.takeIf { it.isNotBlank() }?.let { safeResolve(it) }
+        }
+        if (url == null && track.songPagePath.isBlank() && !isLocalTrack(track)) {
+            // Legacy row without a page path: enrich via movie page once.
+            val enriched = try {
+                trackRefresher.refresh(track)
+            } catch (_: Exception) {
+                null
             }
+            if (enriched != null) {
+                track = enriched
+                _queue.value = _queue.value.toMutableList().also { it[index] = enriched }
+                url = enriched.songPagePath.takeIf { it.isNotBlank() }?.let { safeResolve(it) }
+            }
+        }
+        if (url == null) {
+            url = track.streamUrl?.takeIf(::isPlayableUrl)
+        }
         if (url == null || !isPlayableUrl(url)) {
             _playbackError.value = "Couldn't play \"${track.title.ifBlank { "this track" }}\" — check your connection"
             return
@@ -194,10 +219,20 @@ class PlaybackManager @Inject constructor(
 
     /** True when a track can at least attempt playback (direct URL or page path). */
     fun isResolvable(track: QueueTrack): Boolean =
-        track.streamUrl != null || track.songPagePath.isNotBlank()
+        track.streamUrl != null || track.songPagePath.isNotBlank() || track.movieSlug.isNotBlank()
+
+    /** Legacy rows carrying only a movie slug attempt a one-time movie-page refresh. */
+    fun needsRefresh(track: QueueTrack): Boolean =
+        track.streamUrl == null && track.songPagePath.isBlank() && track.movieSlug.isNotBlank()
 
     fun clearPlaybackError() {
         _playbackError.value = null
+    }
+
+    private suspend fun safeResolve(pagePath: String): String? = try {
+        streamResolver.resolve(pagePath)
+    } catch (_: Exception) {
+        null
     }
 
     companion object {
@@ -206,6 +241,13 @@ class PlaybackManager @Inject constructor(
          * https streams (MP3 / downloader / CDN) plus local
          * `content://` / `file://` URIs from completed downloads.
          */
+        fun isLocalUri(url: String): Boolean {
+            val u = url.trim()
+            return u.startsWith("content://") || u.startsWith("file://")
+        }
+
+        fun isLocalTrack(track: QueueTrack): Boolean =
+            track.streamUrl?.let(::isLocalUri) == true
         fun isPlayableUrl(url: String): Boolean {
             val u = url.trim()
             if (u.isBlank() || u.contains(" ")) return false
@@ -215,8 +257,7 @@ class PlaybackManager @Inject constructor(
         }
 
         /** Build the absolute stream URL from a site-relative dl path. */
-        fun absoluteStreamUrl(dlPath: String, baseUrl: String = "https://www.masstamilan.dev"): String? {
-            val p = dlPath.trim()
+        fun absoluteStreamUrl(dlPath: String, baseUrl: String = "https://www.masstamilan.dev"): String? {            val p = dlPath.trim()
             if (p.isBlank()) return null
             if (p.startsWith("http")) return p
             if (p.startsWith("/downloader/")) return baseUrl + p

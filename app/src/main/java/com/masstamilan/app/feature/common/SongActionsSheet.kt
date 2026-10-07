@@ -43,7 +43,7 @@ import coil.compose.AsyncImage
 import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.data.model.SongResult
-import com.masstamilan.app.data.model.pagePathOf
+import com.masstamilan.app.data.model.songPagePathOf
 import com.masstamilan.app.data.repository.LibraryRepository
 import com.masstamilan.app.data.repository.directStreamUrl
 import com.masstamilan.app.data.repository.queueTrackFor
@@ -80,7 +80,7 @@ fun SongActionsSheet(
             title = song.name,
             artist = song.artists,
             artwork = Artwork.url(song.imageName),
-            songPagePath = pagePathOf(song.dlPath),
+            songPagePath = songPagePathOf(song),
             movieSlug = movieSlug.ifBlank { song.movieName },
             streamUrl = directStreamUrl(song.dlPath)
         )

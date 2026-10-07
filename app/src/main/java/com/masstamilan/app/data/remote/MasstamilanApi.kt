@@ -209,8 +209,15 @@ object MasstamilanParsers {
         val movieName = extractMovieName(html).ifBlank { movieNameFallback }
         val jsTracks = parseAlbumTracksFromHtml(html)
         if (jsTracks.isNotEmpty()) {
+            // window.albumTracks dl_paths are p128 preview streams (/downloader/…),
+            // so the song-page path must come from the track-table anchors instead —
+            // otherwise downloads/streaming can only ever offer the 128kbps fallback.
+            val pageByName = extractSongPagePaths(html)
             return jsTracks.map { t ->
-                t.copy(movieName = t.movieName.ifBlank { movieName })
+                t.copy(
+                    movieName = t.movieName.ifBlank { movieName },
+                    pagePath = pageByName[normalizeSongName(t.name)].orEmpty()
+                )
             }
         }
         val doc = Jsoup.parse(html)
@@ -230,7 +237,8 @@ object MasstamilanParsers {
                 SongResult(
                     name = name, artists = artists, movieName = movieName,
                     duration = extractDuration(doc, h2),
-                    id = id, dlPath = path, imageName = imgName
+                    id = id, dlPath = path, imageName = imgName,
+                    pagePath = path.trim('/')
                 )
             )
         }
@@ -244,12 +252,46 @@ object MasstamilanParsers {
             songs.add(
                 SongResult(
                     name = decodeHtml(name), artists = artists, movieName = movieName,
-                    id = id, dlPath = href, imageName = imgName
+                    id = id, dlPath = href, imageName = imgName,
+                    pagePath = href.trim('/')
                 )
             )
         }
         return songs
     }
+
+    /**
+     * Map normalized song name → song-page path (e.g. "4738/ala-bolelo-mp3-song")
+     * from the track-table anchors. The album JSON only carries preview-stream
+     * dl_paths, so this is what unlocks per-song 128/320kbps resolution.
+     * Pure + unit-tested.
+     */
+    fun extractSongPagePaths(html: String): Map<String, String> {
+        if (html.isBlank()) return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        Jsoup.parse(html).select("link[href], a[href]").forEach { el ->
+            val raw = el.attr("href").trim()
+            val path = raw.substringBefore("?").substringBefore("#").trim()
+            if (!path.matches(Regex("""/\d+/[a-z0-9\-]+-mp3-song"""))) return@forEach
+            val pagePath = path.trim('/')
+            // Prefer the title ("Download X mp3 song") over the visible text,
+            // which can carry trailing whitespace. link[itemprop=url] tags have
+            // no title/text, so fall back to the sibling track name.
+            val title = el.attr("title").trim()
+            val fromTitle = Regex("""^Download\s+(.+?)\s+mp3 song$""", RegexOption.IGNORE_CASE)
+                .find(title)?.groupValues?.get(1)
+            val label = fromTitle ?: el.text().ifBlank {
+                el.parent()?.selectFirst("a[href]")?.text().orEmpty()
+            }
+            val key = normalizeSongName(label)
+            if (key.isNotBlank()) out.putIfAbsent(key, pagePath)
+        }
+        return out
+    }
+
+    /** Lowercase + collapse whitespace so "Ala Bolelo " matches "ala bolelo". */
+    fun normalizeSongName(s: String): String =
+        decodeHtml(s).lowercase().replace(Regex("""\s+"""), " ").trim()
 
     private fun extractArtists(doc: org.jsoup.nodes.Document): String {
         val label = doc.select("b:contains(Artists)").firstOrNull()

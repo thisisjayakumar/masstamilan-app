@@ -1,11 +1,16 @@
 package com.masstamilan.app.data.repository
 
+import com.masstamilan.app.core.media.TrackRefresher
 import com.masstamilan.app.data.dao.FavoriteDao
 import com.masstamilan.app.data.dao.PlaylistDao
 import com.masstamilan.app.data.entity.FavoriteEntity
 import com.masstamilan.app.data.entity.PlaylistEntity
 import com.masstamilan.app.data.entity.PlaylistSongEntity
 import com.masstamilan.app.data.model.QueueTrack
+import com.masstamilan.app.data.model.SongResult
+import com.masstamilan.app.data.model.songPagePathOf
+import com.masstamilan.app.data.remote.MasstamilanApi
+import com.masstamilan.app.data.remote.MasstamilanParsers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -38,6 +43,33 @@ class LibraryRepository @Inject constructor(
     }
 
     suspend fun isFavorite(track: QueueTrack) = favoriteDao.isFavorite(favoriteKey(track))
+
+    /** Insert-only favorite add used by backup import (no toggle semantics). */
+    suspend fun addFavorite(track: QueueTrack) {
+        val key = favoriteKey(track)
+        if (!favoriteDao.isFavorite(key)) {
+            favoriteDao.insert(toEntity(track, key))
+        }
+    }
+
+    suspend fun allFavoritesList(): List<FavoriteEntity> = favorites().first()
+
+    suspend fun allPlaylistsList(): List<PlaylistEntity> = playlists().first()
+
+    suspend fun playlistByName(name: String): PlaylistEntity? = playlistDao.getByName(name)
+
+    /**
+     * Persist a freshly re-resolved song-page path back to every library row
+     * sharing the track's key, re-keying to the canonical key so future
+     * like/unlike lookups keep matching. No-op when already canonical.
+     */
+    suspend fun rekeyWithPagePath(track: QueueTrack, pagePath: String) {
+        val oldKey = favoriteKey(track)
+        val newKey = FavoriteEntity.key(track.movieSlug, pagePath, track.songId)
+        if (oldKey == newKey) return
+        favoriteDao.rekey(oldKey, newKey, pagePath)
+        playlistDao.rekeySongs(oldKey, newKey, pagePath)
+    }
 
     private fun toEntity(t: QueueTrack, key: String) = FavoriteEntity(
         songKey = key, songId = t.songId, name = t.title, artists = t.artist,
@@ -145,4 +177,50 @@ fun shuffledQueueWithStart(
     val selected = tracks.getOrNull(startIndex.coerceIn(tracks.indices))
     val newIndex = if (selected != null) shuffled.indexOf(selected).takeIf { it >= 0 } ?: 0 else 0
     return shuffled to newIndex
+}
+
+/**
+ * Pure match step of library refresh: pick the movie-page song for a stale
+ * library track, preferring stable song id over title. Unit-tested.
+ */
+fun selectRefreshMatch(songs: List<SongResult>, track: QueueTrack): SongResult? {
+    if (songs.isEmpty()) return null
+    if (track.songId != 0) {
+        songs.firstOrNull { it.id == track.songId }?.let { return it }
+    }
+    val want = MasstamilanParsers.normalizeSongName(track.title)
+    if (want.isNotBlank()) {
+        songs.firstOrNull { MasstamilanParsers.normalizeSongName(it.name) == want }?.let { return it }
+    }
+    return null
+}
+
+/**
+ * One-time enricher for pre-pagePath library rows: re-fetches the movie page
+ * at click time, matches the song, persists the stable page path back to the
+ * library (re-keyed) and returns the enriched track for lively resolution.
+ * Signed stream URLs are never persisted — they expire within a day.
+ */
+@Singleton
+class LibraryTrackRefresher @Inject constructor(
+    private val api: MasstamilanApi,
+    private val library: LibraryRepository
+) : TrackRefresher {
+    override suspend fun refresh(track: QueueTrack): QueueTrack? {
+        if (track.songPagePath.isNotBlank() || track.movieSlug.isBlank()) return null
+        val songs = try {
+            api.getSongsFromMovieSlug(track.movieSlug)
+        } catch (_: Exception) {
+            return null
+        }
+        val match = selectRefreshMatch(songs, track) ?: return null
+        val pagePath = songPagePathOf(match)
+        if (pagePath.isBlank()) return null
+        try {
+            library.rekeyWithPagePath(track, pagePath)
+        } catch (_: Exception) {
+            // Enrichment still succeeds for this playback even if persist fails.
+        }
+        return track.copy(songPagePath = pagePath)
+    }
 }

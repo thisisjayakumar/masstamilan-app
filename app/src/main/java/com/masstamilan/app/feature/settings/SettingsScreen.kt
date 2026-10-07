@@ -1,5 +1,6 @@
 package com.masstamilan.app.feature.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,15 +10,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -25,6 +31,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -44,6 +51,8 @@ fun SettingsScreen(
 ) {
     val streamHigh by viewModel.streamHigh.collectAsState()
     val downloadHigh by viewModel.downloadHigh.collectAsState()
+    val backupStatus by viewModel.backupStatus.collectAsState()
+    val backupBusy by viewModel.backupBusy.collectAsState()
 
     Scaffold(
         topBar = {
@@ -95,6 +104,58 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(16.dp))
+            Text("Library backup", style = MaterialTheme.typography.titleSmall, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = CardColor)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (backupBusy) {
+                            CircularProgressIndicator(
+                                color = Primary,
+                                modifier = Modifier.padding(end = 12.dp)
+                            )
+                        }
+                        Text(
+                            backupStatus,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = viewModel::exportBackup,
+                            enabled = !backupBusy,
+                            colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Save", color = TextPrimary) }
+                        OutlinedButton(
+                            onClick = viewModel::importBackup,
+                            enabled = !backupBusy,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Restore", color = TextPrimary) }
+                        TextButton(
+                            onClick = viewModel::deleteBackup,
+                            enabled = !backupBusy
+                        ) { Text("Delete", color = TextSecondary) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Saved to Documents/MasstamilanApp — survives reinstalls. Metadata only, no audio.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextHint
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
             Text("About", style = MaterialTheme.typography.titleSmall, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
             Card(
@@ -138,7 +199,14 @@ private fun QualityRow(
             Switch(
                 checked = checked,
                 onCheckedChange = onChecked,
-                colors = SwitchDefaults.colors(checkedThumbColor = Primary)
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Primary,
+                    checkedBorderColor = Primary,
+                    uncheckedThumbColor = TextHint,
+                    uncheckedTrackColor = Color.Transparent,
+                    uncheckedBorderColor = TextHint
+                )
             )
         }
     }

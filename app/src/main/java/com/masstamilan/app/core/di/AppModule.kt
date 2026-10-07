@@ -7,6 +7,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.core.media.StreamResolver
+import com.masstamilan.app.core.media.TrackRefresher
 import com.masstamilan.app.core.settings.UserPreferences
 import com.masstamilan.app.core.util.DownloadHelper
 import com.masstamilan.app.data.dao.DownloadDao
@@ -15,6 +16,7 @@ import com.masstamilan.app.data.dao.PlaylistDao
 import com.masstamilan.app.data.database.AppDatabase
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.repository.LibraryRepository
+import com.masstamilan.app.data.repository.LibraryTrackRefresher
 import com.masstamilan.app.data.repository.MasstamilanRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Singleton
@@ -91,8 +93,18 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePlaybackManager(resolver: StreamResolver): PlaybackManager {
-        return PlaybackManager(resolver)
+    fun provideTrackRefresher(
+        api: MasstamilanApi,
+        library: LibraryRepository
+    ): TrackRefresher = LibraryTrackRefresher(api, library)
+
+    @Provides
+    @Singleton
+    fun providePlaybackManager(
+        resolver: StreamResolver,
+        refresher: TrackRefresher
+    ): PlaybackManager {
+        return PlaybackManager(resolver, refresher)
     }
 }
 

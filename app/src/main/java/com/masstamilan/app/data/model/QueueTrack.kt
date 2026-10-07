@@ -24,6 +24,15 @@ fun pagePathOf(dlPath: String): String {
     return ""
 }
 
+/**
+ * Song-page path usable with [MasstamilanApi.resolveStreamUrl].
+ * Prefers the parser-supplied [SongResult.pagePath] (track-table anchors);
+ * album-JSON dl_paths are p128 preview streams, so deriving from dlPath alone
+ * would strand downloads/playback on the 128kbps fallback.
+ */
+fun songPagePathOf(s: SongResult): String =
+    s.pagePath.ifBlank { pagePathOf(s.dlPath) }
+
 /** Pure mapper: scraped songs → playable queue. Direct `/downloader/` links need no resolving. */
 fun List<SongResult>.toQueue(movieSlug: String = ""): List<QueueTrack> = map { s ->
     val dl = s.dlPath.trim()
@@ -36,7 +45,7 @@ fun List<SongResult>.toQueue(movieSlug: String = ""): List<QueueTrack> = map { s
         title = s.name,
         artist = s.artists,
         artwork = Artwork.url(s.imageName),
-        songPagePath = pagePathOf(dl),
+        songPagePath = songPagePathOf(s),
         movieSlug = movieSlug.ifBlank { s.movieName },
         songId = s.id
     )

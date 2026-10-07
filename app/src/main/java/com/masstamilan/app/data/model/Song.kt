@@ -8,7 +8,9 @@ data class SongResult(
     val id: Int = 0,
     val dlPath: String = "",
     val imageName: String = "",
-    val downloads: Int = 0
+    val downloads: Int = 0,
+    /** Song-page path (e.g. "4738/ala-bolelo-mp3-song") for quality/stream resolution. */
+    val pagePath: String = ""
 )
 
 data class MoviePage(

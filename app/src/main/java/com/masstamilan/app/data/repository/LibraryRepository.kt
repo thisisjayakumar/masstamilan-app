@@ -42,7 +42,7 @@ class LibraryRepository @Inject constructor(
     private fun toEntity(t: QueueTrack, key: String) = FavoriteEntity(
         songKey = key, songId = t.songId, name = t.title, artists = t.artist,
         movieName = t.title, movieSlug = t.movieSlug, songPagePath = t.songPagePath,
-        imageName = t.artwork
+        imageName = t.artwork, streamUrl = t.streamUrl.orEmpty()
     )
 
     // ---- Playlists ----
@@ -64,7 +64,8 @@ class LibraryRepository @Inject constructor(
             playlistId = pid, position = position, songKey = favoriteKey(t),
             songId = t.songId, name = t.title, artists = t.artist,
             movieName = t.title, movieSlug = t.movieSlug,
-            songPagePath = t.songPagePath, imageName = t.artwork
+            songPagePath = t.songPagePath, imageName = t.artwork,
+            streamUrl = t.streamUrl.orEmpty()
         ))
         playlistDao.get(pid)?.let { playlistDao.updatePlaylist(it.copy(updatedAt = System.currentTimeMillis())) }
     }
@@ -82,6 +83,7 @@ class LibraryRepository @Inject constructor(
  * Song-page paths resolve lazily via StreamResolver; unit-tested.
  */
 fun PlaylistSongEntity.toQueueTrack(): QueueTrack = QueueTrack(
+    streamUrl = streamUrl.ifBlank { null },
     title = name,
     artist = artists,
     artwork = imageName,
@@ -91,6 +93,7 @@ fun PlaylistSongEntity.toQueueTrack(): QueueTrack = QueueTrack(
 )
 
 fun FavoriteEntity.toQueueTrack(): QueueTrack = QueueTrack(
+    streamUrl = streamUrl.ifBlank { null },
     title = name,
     artist = artists,
     artwork = imageName,
@@ -106,8 +109,10 @@ fun queueTrackFor(
     artist: String,
     artwork: String,
     songPagePath: String,
-    movieSlug: String
+    movieSlug: String,
+    streamUrl: String? = null
 ): QueueTrack = QueueTrack(
+    streamUrl = streamUrl,
     title = title,
     artist = artist,
     artwork = artwork,
@@ -115,3 +120,29 @@ fun queueTrackFor(
     movieSlug = movieSlug,
     songId = songId
 )
+
+/** Direct stream URL for a scraped dl_path (already-signed /downloader/ or http link). */
+fun directStreamUrl(dlPath: String): String? {
+    val dl = dlPath.trim()
+    return when {
+        dl.startsWith("/downloader/") -> com.masstamilan.app.data.remote.MasstamilanApi.BASE_URL + dl
+        dl.startsWith("http") -> dl
+        else -> null
+    }
+}
+
+/**
+ * Press-time shuffle: returns shuffled queue + new start index pointing at the
+ * originally-selected track. Pure + unit-tested.
+ */
+fun shuffledQueueWithStart(
+    tracks: List<QueueTrack>,
+    startIndex: Int,
+    random: java.util.Random = java.util.Random()
+): Pair<List<QueueTrack>, Int> {
+    if (tracks.isEmpty()) return emptyList<QueueTrack>() to 0
+    val shuffled = tracks.toMutableList().apply { java.util.Collections.shuffle(this, random) }
+    val selected = tracks.getOrNull(startIndex.coerceIn(tracks.indices))
+    val newIndex = if (selected != null) shuffled.indexOf(selected).takeIf { it >= 0 } ?: 0 else 0
+    return shuffled to newIndex
+}

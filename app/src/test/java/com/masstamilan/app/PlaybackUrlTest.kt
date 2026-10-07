@@ -63,8 +63,28 @@ class PlaybackUrlTest {
         assertFalse(PlaybackManager.isPlayableUrl("content://media/external/my song.mp3"))
     }
 
-    @Test fun `320 preferred over 128 in parser`() {
-        val html = """
+    @Test fun `isResolvable requires url or page path`() {
+        val manager = PlaybackManager { null }
+        assertTrue(
+            manager.isResolvable(
+                com.masstamilan.app.data.model.QueueTrack(
+                    streamUrl = "https://cdn.example.com/x.mp3", title = "A"
+                )
+            )
+        )
+        assertTrue(
+            manager.isResolvable(
+                com.masstamilan.app.data.model.QueueTrack(songPagePath = "5/x-mp3-song", title = "B")
+            )
+        )
+        assertFalse(
+            manager.isResolvable(
+                com.masstamilan.app.data.model.QueueTrack(title = "legacy row")
+            )
+        )
+    }
+
+    @Test fun `320 preferred over 128 in parser`() {        val html = """
             <a class="dlink" href="/downloader/s/128" rel="nofollow"
                title="Download X 128kbps"> 128kbps (1 MB)</a>
             <a class="dlink" href="/downloader/s/320" rel="nofollow"

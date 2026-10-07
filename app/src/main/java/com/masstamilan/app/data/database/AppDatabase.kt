@@ -19,7 +19,7 @@ import com.masstamilan.app.data.model.DownloadEntity
         PlaylistEntity::class,
         PlaylistSongEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,14 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
 
-        fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "masstamilan_db"
-                )
-                    .addMigrations(object : Migration(1, 2) {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
                         override fun migrate(db: SupportSQLiteDatabase) {
                             db.execSQL(
                                 "CREATE TABLE IF NOT EXISTS favorites (" +
@@ -50,6 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
                                     "movieSlug TEXT NOT NULL," +
                                     "songPagePath TEXT NOT NULL," +
                                     "imageName TEXT NOT NULL," +
+                                    "streamUrl TEXT NOT NULL DEFAULT ''," +
                                     "addedAt INTEGER NOT NULL)"
                             )
                             db.execSQL(
@@ -71,10 +65,27 @@ abstract class AppDatabase : RoomDatabase() {
                                     "movieName TEXT NOT NULL," +
                                     "movieSlug TEXT NOT NULL," +
                                     "songPagePath TEXT NOT NULL," +
+                                    "streamUrl TEXT NOT NULL DEFAULT ''," +
                                     "imageName TEXT NOT NULL)"
                             )
                         }
-                    })
+                    }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE favorites ADD COLUMN streamUrl TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE playlist_songs ADD COLUMN streamUrl TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "masstamilan_db"
+                )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

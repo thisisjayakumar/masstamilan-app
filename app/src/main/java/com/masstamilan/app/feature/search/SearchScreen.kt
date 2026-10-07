@@ -55,13 +55,15 @@ import com.masstamilan.app.core.media.PlaybackManager
 import com.masstamilan.app.core.settings.UserPreferences
 import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.core.util.DownloadHelper
-import com.masstamilan.app.data.model.DownloadEntity
+import com.masstamilan.app.core.util.DownloadOption
 import com.masstamilan.app.data.model.RankedSong
-import com.masstamilan.app.data.model.pagePathOf
+import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.model.toQueue
-import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.data.repository.MasstamilanRepository
 import com.masstamilan.app.feature.common.SongActionsSheet
+import com.masstamilan.app.feature.downloads.DownloadQualityDialog
+import com.masstamilan.app.feature.downloads.performChosenDownload
+import com.masstamilan.app.feature.downloads.resolveDownloadOptions
 import com.masstamilan.app.ui.theme.Card as CardColor
 import com.masstamilan.app.ui.theme.Primary
 import com.masstamilan.app.ui.theme.Surface
@@ -105,6 +107,10 @@ fun SearchScreen(
     var playingId by remember { mutableStateOf<Int?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
     var menuSong by remember { mutableStateOf<RankedSong?>(null) }
+    // Quality-picker state: always shown before any download starts.
+    var pendingSong by remember { mutableStateOf<SongResult?>(null) }
+    var qualityOptions by remember { mutableStateOf<List<DownloadOption>?>(null) }
+    var selectedQuality by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(initialQuery) {
         if (initialQuery.isNotBlank()) viewModel.onQueryChange(initialQuery)
@@ -123,69 +129,25 @@ fun SearchScreen(
     }
 
     fun enqueueDownload(item: RankedSong) {
+        // Always show the quality picker first — never auto-pick.
         scope.launch {
-            val song = item.song
-            toast = "Starting download: ${song.name}"
-            // Fast path: albumTracks dl_path is already a signed stream URL.
-            val direct = song.dlPath.trim().takeIf { it.startsWith("/downloader/") }
-                ?.let { MasstamilanApi.BASE_URL + it }
-            val (url, quality) = if (direct != null) {
-                direct to if ("d320" in song.dlPath) "320kbps" else "128kbps"
+            pendingSong = item.song
+            qualityOptions = null
+            selectedQuality = null
+            val options = resolveDownloadOptions(item.song, downloadHelper)
+            qualityOptions = options
+            // Pre-select preferred quality when available, user can still change it.
+            val wantHigh = try { prefs.preferHighQualityDownload() } catch (_: Exception) { true }
+            selectedQuality = if (wantHigh) {
+                options.firstOrNull { it.quality == "320kbps" }?.quality
+                    ?: options.firstOrNull()?.quality
             } else {
-                val pagePath = pagePathOf(song.dlPath)
-                if (pagePath.isBlank()) {
-                    toast = "No download link for \"${song.name}\""
-                    return@launch
-                }
-                val options = downloadHelper.songQualities(pagePath)
-                val wantHigh = prefs.preferHighQualityDownload()
-                val best = if (wantHigh) {
-                    options.firstOrNull { it.quality == "320kbps" } ?: options.firstOrNull()
-                } else {
-                    options.firstOrNull { it.quality == "128kbps" } ?: options.firstOrNull()
-                }
-                if (best == null) {
-                    toast = "No download link for \"${song.name}\""
-                    return@launch
-                }
-                best.url to best.quality
+                options.firstOrNull { it.quality == "128kbps" }?.quality
+                    ?: options.firstOrNull()?.quality
             }
-            val rowId = repository.insertDownload(
-                DownloadEntity(
-                    songId = song.id,
-                    songName = song.name,
-                    artist = song.artists,
-                    movieName = song.movieName,
-                    downloadUrl = url,
-                    quality = quality,
-                    status = "downloading"
-                )
-            )
-            var lastPushed = 0f
-            val result = downloadHelper.download(url, song.name, song.artists) { p, done, total ->
-                // Throttle Room writes: push at most every ~5% of progress.
-                if (p - lastPushed >= 0.05f || (total > 0 && done >= total)) {
-                    lastPushed = p
-                    scope.launch {
-                        repository.updateProgress(rowId, "downloading", p, done, total)
-                    }
-                }
+            if (options.isEmpty()) {
+                toast = "No download link for \"${item.song.name}\""
             }
-            result.fold(
-                onSuccess = { file ->
-                    scope.launch {
-                        repository.markCompleted(rowId, file.path)
-                        toast = "Downloaded \"${song.name}\""
-                        navController.navigate("downloads")
-                    }
-                },
-                onFailure = {
-                    scope.launch {
-                        repository.markFailed(rowId)
-                        toast = "Download failed — check connection"
-                    }
-                }
-            )
         }
     }
 
@@ -306,6 +268,25 @@ fun SearchScreen(
                         val slug = item.movieSlug.trim('/').ifBlank { return@SongActionsSheet }
                         navController.navigate("song_detail/$slug")
                     }
+                )
+            }
+            pendingSong?.let { song ->
+                DownloadQualityDialog(
+                    songName = song.name,
+                    options = qualityOptions,
+                    selectedQuality = selectedQuality,
+                    onSelect = { selectedQuality = it },
+                    onConfirm = {
+                        val chosen = qualityOptions?.firstOrNull { it.quality == selectedQuality }
+                        pendingSong = null
+                        if (chosen != null) {
+                            performChosenDownload(
+                                scope, repository, downloadHelper, navController,
+                                song, chosen
+                            ) { toast = it }
+                        }
+                    },
+                    onDismiss = { pendingSong = null }
                 )
             }
         }

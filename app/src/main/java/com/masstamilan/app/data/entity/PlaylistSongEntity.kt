@@ -19,5 +19,6 @@ data class PlaylistSongEntity(
     val movieName: String = "",
     val movieSlug: String = "",
     val songPagePath: String = "",
-    val imageName: String = ""
+    val imageName: String = "",
+    val streamUrl: String = ""
 )

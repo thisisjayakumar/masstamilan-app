@@ -34,6 +34,7 @@ import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.feature.downloads.DownloadsScreen
 import com.masstamilan.app.feature.home.HomeScreen
 import com.masstamilan.app.feature.library.LibraryScreen
+import com.masstamilan.app.feature.library.LikedSongsScreen
 import com.masstamilan.app.feature.library.PlaylistDetailScreen
 import com.masstamilan.app.feature.player.PlayerScreen
 import com.masstamilan.app.feature.search.SearchScreen
@@ -109,6 +110,7 @@ private fun AppShell() {
                 SearchScreen(navController, initialQuery = query)
             }
             composable("library") { LibraryScreen(navController) }
+            composable("liked") { LikedSongsScreen(navController) }
             composable("playlist/{pid}") { backStackEntry ->
                 val pid = backStackEntry.arguments?.getString("pid")?.toLongOrNull() ?: 0L
                 PlaylistDetailScreen(navController, pid)

@@ -19,12 +19,17 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.core.media.PlaybackManager
+import com.masstamilan.app.core.util.DownloadOption
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.model.toQueue
 import com.masstamilan.app.data.remote.MasstamilanApi
 import com.masstamilan.app.feature.common.SongActionsSheet
+import com.masstamilan.app.feature.downloads.DownloadQualityDialog
+import com.masstamilan.app.feature.downloads.performChosenDownload
+import com.masstamilan.app.feature.downloads.resolveDownloadOptions
 import com.masstamilan.app.ui.theme.*
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +49,14 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
     }
     val resolvedApi = api ?: remember { entryPoint.api() }
     val playbackManager = remember { entryPoint.playbackManager() }
+    val repository = remember { entryPoint.repository() }
+    val downloadHelper = remember { entryPoint.downloadHelper() }
+    val prefs = remember { entryPoint.userPreferences() }
+    val scope = rememberCoroutineScope()
+
+    var pendingSong by remember { mutableStateOf<SongResult?>(null) }
+    var qualityOptions by remember { mutableStateOf<List<DownloadOption>?>(null) }
+    var selectedQuality by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(movieSlug) {
         try {
@@ -56,6 +69,26 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
         }
     }
 
+    fun askDownloadQuality(song: SongResult) {
+        scope.launch {
+            pendingSong = song
+            qualityOptions = null
+            selectedQuality = null
+            val options = resolveDownloadOptions(song, downloadHelper)
+            qualityOptions = options
+            val wantHigh = try { prefs.preferHighQualityDownload() } catch (_: Exception) { true }
+            selectedQuality = if (wantHigh) {
+                options.firstOrNull { it.quality == "320kbps" }?.quality
+                    ?: options.firstOrNull()?.quality
+            } else {
+                options.firstOrNull { it.quality == "128kbps" }?.quality
+                    ?: options.firstOrNull()?.quality
+            }
+            if (options.isEmpty()) {
+                toast = "No download link for \"${song.name}\""
+            }
+        }
+    }
     fun playSong(song: SongResult) {
         // Whole album becomes the queue; the manager resolves each URL lazily.
         val queue = songs.toQueue(movieSlug)
@@ -93,7 +126,7 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
                             song = song,
                             playingIndex = playingIndex,
                             onPlay = { playSong(song) },
-                            onDownload = { navController.navigate("downloads") },
+                            onDownload = { askDownloadQuality(song) },
                             onMore = { menuSong = song }
                         )
                     }
@@ -114,8 +147,27 @@ fun SongDetailScreen(navController: NavController, movieSlug: String, api: Masst
                     movieSlug = movieSlug,
                     onDismiss = { menuSong = null },
                     onPlay = { playSong(song) },
-                    onDownload = { navController.navigate("downloads") },
+                    onDownload = { askDownloadQuality(song) },
                     onAlbum = { /* already on the album */ }
+                )
+            }
+            pendingSong?.let { song ->
+                DownloadQualityDialog(
+                    songName = song.name,
+                    options = qualityOptions,
+                    selectedQuality = selectedQuality,
+                    onSelect = { selectedQuality = it },
+                    onConfirm = {
+                        val chosen = qualityOptions?.firstOrNull { it.quality == selectedQuality }
+                        pendingSong = null
+                        if (chosen != null) {
+                            performChosenDownload(
+                                scope, repository, downloadHelper, navController,
+                                song, chosen
+                            ) { toast = it }
+                        }
+                    },
+                    onDismiss = { pendingSong = null }
                 )
             }
         }

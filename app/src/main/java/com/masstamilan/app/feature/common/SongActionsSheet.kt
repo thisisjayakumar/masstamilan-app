@@ -45,6 +45,7 @@ import com.masstamilan.app.core.util.Artwork
 import com.masstamilan.app.data.model.SongResult
 import com.masstamilan.app.data.model.pagePathOf
 import com.masstamilan.app.data.repository.LibraryRepository
+import com.masstamilan.app.data.repository.directStreamUrl
 import com.masstamilan.app.data.repository.queueTrackFor
 import com.masstamilan.app.ui.theme.Primary
 import com.masstamilan.app.ui.theme.TextPrimary
@@ -80,7 +81,8 @@ fun SongActionsSheet(
             artist = song.artists,
             artwork = Artwork.url(song.imageName),
             songPagePath = pagePathOf(song.dlPath),
-            movieSlug = movieSlug.ifBlank { song.movieName }
+            movieSlug = movieSlug.ifBlank { song.movieName },
+            streamUrl = directStreamUrl(song.dlPath)
         )
     }
     var isFav by remember { mutableStateOf(false) }

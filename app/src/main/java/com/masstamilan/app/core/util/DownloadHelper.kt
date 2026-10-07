@@ -51,13 +51,15 @@ class DownloadHelper @Inject constructor(
         }
     }
 
-    /** Download to MediaStore (API 29+) with IS_PENDING, legacy fallback ≤ 28. */
+    /** Download to MediaStore (API 29+) with IS_PENDING, legacy fallback ≤ 28.
+     * Returns the playable path: content:// URI string on API 29+, absolute
+     * file path on legacy. Stored as-is in [DownloadEntity.filePath]. */
     suspend fun download(
         url: String,
         songName: String,
         artist: String,
         onProgress: ((Float, Long, Long) -> Unit)? = null
-    ): Result<File> = withContext(Dispatchers.IO) {
+    ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val resp = client.newCall(Request.Builder().url(url).build()).execute()
             if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
@@ -88,7 +90,22 @@ class DownloadHelper @Inject constructor(
         }
     }
 
-    private fun mediaStoreInsert(songName: String, artist: String, tmp: File): File {
+    /** True when a stored filePath still resolves (content URI or file). */
+    fun storedFileExists(filePath: String): Boolean {
+        if (filePath.isBlank()) return false
+        return try {
+            if (filePath.startsWith("content://")) {
+                context.contentResolver.openInputStream(android.net.Uri.parse(filePath))
+                    ?.use { true } ?: false
+            } else {
+                File(filePath).exists()
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun mediaStoreInsert(songName: String, artist: String, tmp: File): String {
         val safe = sanitizeFileName(songName, artist)
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, "$safe.mp3")
@@ -106,10 +123,10 @@ class DownloadHelper @Inject constructor(
         values.put(MediaStore.Audio.Media.IS_PENDING, 0)
         context.contentResolver.update(uri, values, null, null)
         tmp.delete()
-        return File(uri.toString())
+        return uri.toString()
     }
 
-    private fun legacyMove(songName: String, artist: String, tmp: File): File {
+    private fun legacyMove(songName: String, artist: String, tmp: File): String {
         val dir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
             "MasstamilanApp"
@@ -118,6 +135,9 @@ class DownloadHelper @Inject constructor(
         val safe = sanitizeFileName(songName, artist)
         val dest = File(dir, "$safe.mp3")
         tmp.renameTo(dest)
-        return dest
+        android.media.MediaScannerConnection.scanFile(
+            context, arrayOf(dest.absolutePath), arrayOf("audio/mpeg"), null
+        )
+        return dest.absolutePath
     }
 }

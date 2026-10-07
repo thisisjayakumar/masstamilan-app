@@ -49,6 +49,8 @@ class PlaybackManager @Inject constructor(
     val queueFlow: StateFlow<List<QueueTrack>> = _queue
     private val _currentIndex = MutableStateFlow(-1)
     val currentIndexFlow: StateFlow<Int> = _currentIndex
+    private val _playbackError = MutableStateFlow<String?>(null)
+    val playbackErrorFlow: StateFlow<String?> = _playbackError
 
     fun createPlayer(context: Context): ExoPlayer {
         appContext = context.applicationContext
@@ -94,13 +96,22 @@ class PlaybackManager @Inject constructor(
 
     /**
      * Album/result list with start position. Entries without a direct URL
-     * resolve via [StreamResolver] when reached. Returns false when empty.
+     * resolve via [StreamResolver] when reached. Returns false when empty
+     * or when the start track has neither URL nor page path (legacy
+     * unresolvable library rows) so callers can toast instead of navigating
+     * to a stuck "Playing" screen.
      */
     fun playQueue(context: Context, tracks: List<QueueTrack>, startIndex: Int = 0): Boolean {
         if (tracks.isEmpty()) return false
+        val idx = startIndex.coerceIn(tracks.indices)
+        if (!isResolvable(tracks[idx])) {
+            _playbackError.value = "Couldn't play \"${tracks[idx].title.ifBlank { "this track" }}\" — re-add it from Search"
+            return false
+        }
+        _playbackError.value = null
         appContext = context.applicationContext
         _queue.value = tracks
-        scope.launch { loadAt(startIndex.coerceIn(tracks.indices), autoplay = true) }
+        scope.launch { loadAt(idx, autoplay = true) }
         return true
     }
 
@@ -111,7 +122,11 @@ class PlaybackManager @Inject constructor(
     fun previousInAlbum(): Boolean = step(-1)
 
     private fun playTrack(context: Context, track: QueueTrack): Boolean {
-        if (track.streamUrl == null && track.songPagePath.isBlank()) return false
+        if (!isResolvable(track)) {
+            _playbackError.value = "Couldn't play \"${track.title.ifBlank { "this track" }}\""
+            return false
+        }
+        _playbackError.value = null
         appContext = context.applicationContext
         _queue.value = listOf(track)
         scope.launch { loadAt(0, autoplay = true) }
@@ -136,8 +151,11 @@ class PlaybackManager @Inject constructor(
                 } catch (_: Exception) {
                     null
                 }
-            } ?: return
-        if (!isPlayableUrl(url)) return
+            }
+        if (url == null || !isPlayableUrl(url)) {
+            _playbackError.value = "Couldn't play \"${track.title.ifBlank { "this track" }}\" — check your connection"
+            return
+        }
         val exo = createPlayer(context)
         if (url == currentUrl && exo.mediaItemCount > 0) {
             if (autoplay) exo.play()
@@ -162,6 +180,7 @@ class PlaybackManager @Inject constructor(
         exo.prepare()
         exo.playWhenReady = autoplay
         _currentIndex.value = index
+        _playbackError.value = null
     }
 
     fun stopAndClear() {
@@ -171,6 +190,14 @@ class PlaybackManager @Inject constructor(
         currentArtwork = ""
         _queue.value = emptyList()
         _currentIndex.value = -1
+    }
+
+    /** True when a track can at least attempt playback (direct URL or page path). */
+    fun isResolvable(track: QueueTrack): Boolean =
+        track.streamUrl != null || track.songPagePath.isNotBlank()
+
+    fun clearPlaybackError() {
+        _playbackError.value = null
     }
 
     companion object {

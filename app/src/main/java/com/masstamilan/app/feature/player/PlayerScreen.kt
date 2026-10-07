@@ -61,6 +61,7 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
     // Recompose on track change so title/artist/artwork refresh without navigation.
     val queue by resolvedManager.queueFlow.collectAsState()
     val trackIndex by resolvedManager.currentIndexFlow.collectAsState()
+    val managerError by resolvedManager.playbackErrorFlow.collectAsState()
     val canSkip = queue.size > 1 && trackIndex >= 0
     var isPlaying by remember { mutableStateOf(player.isPlaying) }
     var position by remember { mutableStateOf(player.currentPosition) }
@@ -68,6 +69,9 @@ fun PlayerScreen(navController: NavController, songId: String, playbackManager: 
     var shuffleOn by remember { mutableStateOf(player.shuffleModeEnabled) }
     var repeatOne by remember { mutableStateOf(player.repeatMode == Player.REPEAT_MODE_ONE) }
     var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(managerError) {
+        if (managerError != null) error = managerError
+    }
 
     val title = resolvedManager.currentTitle().ifBlank { "Playing" }
     val artist = resolvedManager.currentArtist()

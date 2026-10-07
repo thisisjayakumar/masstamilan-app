@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -62,6 +63,7 @@ fun DownloadsScreen(navController: NavController) {
     }
     val repository = remember { entryPoint.repository() }
     val playbackManager = remember { entryPoint.playbackManager() }
+    val downloadHelper = remember { entryPoint.downloadHelper() }
     val scope = rememberCoroutineScope()
 
     val downloads by repository.getDownloads().collectAsState(initial = emptyList())
@@ -72,10 +74,45 @@ fun DownloadsScreen(navController: NavController) {
             toast = "Not downloaded yet"
             return
         }
+        if (!downloadHelper.storedFileExists(d.filePath)) {
+            toast = "File missing — please re-download \"${d.songName}\""
+            return
+        }
         if (playbackManager.playStream(context, d.filePath, d.songName, d.artist)) {
             navController.navigate("player/${d.songId}")
         } else {
             toast = "Couldn't play \"${d.songName}\""
+        }
+    }
+
+    fun openWithExternal(d: DownloadEntity) {
+        if (d.status != "completed" || d.filePath.isBlank()) {
+            toast = "Not downloaded yet"
+            return
+        }
+        if (!downloadHelper.storedFileExists(d.filePath)) {
+            toast = "File missing — please re-download \"${d.songName}\""
+            return
+        }
+        try {
+            val uri = if (d.filePath.startsWith("content://")) {
+                android.net.Uri.parse(d.filePath)
+            } else {
+                androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    java.io.File(d.filePath)
+                )
+            }
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "audio/mpeg")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(
+                android.content.Intent.createChooser(intent, "Play \"${d.songName}\" with…")
+            )
+        } catch (_: Exception) {
+            toast = "No music player found to open \"${d.songName}\""
         }
     }
 
@@ -103,6 +140,7 @@ fun DownloadsScreen(navController: NavController) {
                         DownloadItem(
                             download = download,
                             onPlay = { playDownload(download) },
+                            onOpenWith = { openWithExternal(download) },
                             onDelete = {
                                 scope.launch { repository.deleteDownload(download.id) }
                             }
@@ -127,6 +165,7 @@ fun DownloadsScreen(navController: NavController) {
 fun DownloadItem(
     download: DownloadEntity,
     onPlay: () -> Unit,
+    onOpenWith: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -146,6 +185,11 @@ fun DownloadItem(
                         style = MaterialTheme.typography.labelSmall,
                         color = TextHint
                     )
+                }
+                if (download.status == "completed") {
+                    IconButton(onClick = onOpenWith) {
+                        Icon(Icons.Default.OpenInNew, "Open with local player", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                    }
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, "Delete", tint = Error, modifier = Modifier.size(20.dp))

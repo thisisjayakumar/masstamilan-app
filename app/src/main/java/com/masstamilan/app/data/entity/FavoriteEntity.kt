@@ -18,6 +18,7 @@ data class FavoriteEntity(
     val movieSlug: String = "",
     val songPagePath: String = "",
     val imageName: String = "",
+    val streamUrl: String = "",
     val addedAt: Long = System.currentTimeMillis()
 ) {
     companion object {

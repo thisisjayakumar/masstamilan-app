@@ -48,14 +48,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
-import com.masstamilan.app.core.di.AppEntryPoint
 import com.masstamilan.app.data.entity.PlaylistEntity
-import com.masstamilan.app.data.repository.toQueueTrack
 import com.masstamilan.app.ui.theme.Card as CardColor
 import com.masstamilan.app.ui.theme.Error
 import com.masstamilan.app.ui.theme.Primary
@@ -63,7 +59,6 @@ import com.masstamilan.app.ui.theme.Surface
 import com.masstamilan.app.ui.theme.TextHint
 import com.masstamilan.app.ui.theme.TextPrimary
 import com.masstamilan.app.ui.theme.TextSecondary
-import dagger.hilt.android.EntryPointAccessors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,12 +66,6 @@ fun LibraryScreen(
     navController: NavController,
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
-    val playbackManager = remember {
-        EntryPointAccessors.fromApplication(
-            context.applicationContext, AppEntryPoint::class.java
-        ).playbackManager()
-    }
     val favorites by viewModel.favorites.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
@@ -118,53 +107,27 @@ fun LibraryScreen(
                 }
             }
 
-            // Favorites
+            // Liked Songs entry — opens the dedicated screen (no inline list).
             item {
-                SectionHeader(
-                    title = "Liked Songs",
-                    count = favorites.size,
-                    onPlayAll = {
-                        if (favorites.isEmpty()) return@SectionHeader
-                        val queue = favorites.map { it.toQueueTrack() }
-                        if (playbackManager.playQueue(context, queue, 0)) {
-                            navController.navigate("player/${queue[0].songId}")
-                        }
-                    }
-                )
-            }
-            if (favorites.isEmpty()) {
-                item { Text("Tap the heart on any song to save it here.", color = TextHint) }
-            } else {
-                items(favorites.take(5), key = { it.songKey }) { fav ->
-                    val art = fav.imageName.ifBlank { null }
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            .clickable {
-                                val queue = favorites.map { it.toQueueTrack() }
-                                val idx = queue.indexOfFirst { it.songId == fav.songId }
-                                if (playbackManager.playQueue(context, queue, idx.coerceAtLeast(0))) {
-                                    navController.navigate("player/${fav.songId}")
-                                }
-                            },
-                        colors = CardDefaults.cardColors(containerColor = CardColor)
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        .clickable { navController.navigate("liked") },
+                    colors = CardDefaults.cardColors(containerColor = CardColor)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (art != null) {
-                                AsyncImage(model = art, contentDescription = null, modifier = Modifier.size(48.dp))
-                                Spacer(Modifier.width(12.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(fav.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                                Text(fav.artists, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1)
-                            }
-                            IconButton(onClick = {
-                                viewModel.toggleFavorite(fav.toQueueTrack())
-                            }) {
-                                Icon(Icons.Default.Favorite, "Unlike", tint = Primary)
-                            }
+                        Icon(Icons.Default.Favorite, null, tint = Primary, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Liked Songs", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Text(
+                                if (favorites.isEmpty()) "Tap the heart on any song to save it here."
+                                else "${favorites.size} songs",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
                         }
                     }
                 }
